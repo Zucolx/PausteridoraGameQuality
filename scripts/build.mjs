@@ -1,11 +1,11 @@
 // Genera un único HTML autocontenido (scripts y fuentes incrustados) para jugar sin conexión.
-// Uso: pnpm build [ruta-de-salida]   (por defecto dist/pasteurizadora-flash.html)
+// Uso: pnpm build [ruta-de-salida]   (por defecto dist/lo-que-no-se-ve.html)
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const out = resolve(process.argv[2] || join(root, 'dist', 'pasteurizadora-flash.html'));
+const out = resolve(process.argv[2] || join(root, 'dist', 'lo-que-no-se-ve.html'));
 
 export function build() {
   let html = readFileSync(join(root, 'index.html'), 'utf8');

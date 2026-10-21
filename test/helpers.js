@@ -1,7 +1,17 @@
-// Carga los módulos del juego (scripts clásicos que cuelgan de globalThis.PF) en Node.
+// Carga los módulos de la colección (scripts clásicos que cuelgan de globalThis.PF) en Node.
+// Solo la lógica: las funciones de dibujo no se llaman en las pruebas.
+require('../src/core/draw.js');
 require('../src/config.js');
 require('../src/minigames.js');
 require('../src/sim.js');
+require('../src/render.js');
+require('../src/core/bubble.js');
+require('../src/core/world.js');
+require('../src/content/manual.js');
+require('../src/games/pasteurizer.js');
+require('../src/games/cip.js');
+require('../src/games/hunter.js');
+require('../src/games/stop.js');
 
 const PF = globalThis.PF;
 const C = PF.CONFIG;

@@ -64,6 +64,8 @@
     return {
       rng,
       scheduler: opts.scheduler !== false,
+      diff: C.DIFFICULTY[opts.difficulty] || C.DIFFICULTY.normal,
+      ph: null,
       time: 0,
       ticks: 0,
       totalTicks: Math.round(C.DURATION / C.TICK),
@@ -311,7 +313,7 @@
           break;
         case 'steamHit': {
           const cooling = e.mg.active && g.player.operating === 'temp' && !isBlocked(g, 'temp');
-          addVar(g, 'temp', (cooling ? -P.steamHit.coolRate : P.steamHit.rate) * dt);
+          addVar(g, 'temp', (cooling ? -P.steamHit.coolRate : P.steamHit.rate * g.diff.drift) * dt);
           break;
         }
         case 'airPump':
@@ -320,7 +322,7 @@
         case 'foam':
           e.t += dt;
           e.flowOffset = P.foam.flowOffset + P.foam.wobble * Math.sin(e.t * 7.3);
-          addVar(g, 'hold', -P.foam.holdRate * dt);
+          addVar(g, 'hold', -P.foam.holdRate * g.diff.drift * dt);
           break;
         case 'crazySensor': {
           const key = e.vars[0];
@@ -374,13 +376,13 @@
     const e = { id: g.nextId++, type, name: def.name, kind: def.kind, station, vars, hint: def.hint, age: 0, settle: 0, born: g.time, mg: null };
     switch (type) {
       case 'thermalDrift':
-        e.rate = sign(rng) * between(rng, P.thermalDrift.rate);
+        e.rate = sign(rng) * between(rng, P.thermalDrift.rate) * g.diff.drift;
         break;
       case 'flowDrift':
-        e.rate = sign(rng) * between(rng, P.flowDrift.rate);
+        e.rate = sign(rng) * between(rng, P.flowDrift.rate) * g.diff.drift;
         break;
       case 'slowBelt':
-        e.rate = between(rng, P.slowBelt.rate);
+        e.rate = between(rng, P.slowBelt.rate) * g.diff.drift;
         break;
       case 'stuckValve': {
         const cfg = C.VARS.flow;
@@ -396,7 +398,7 @@
         e.flowOffset = P.foam.flowOffset;
         break;
       case 'crazySensor':
-        e.realDrift = sign(rng) * P.crazySensor.realDrift * TYPICAL_DRIFT[vars[0]];
+        e.realDrift = sign(rng) * P.crazySensor.realDrift * TYPICAL_DRIFT[vars[0]] * g.diff.drift;
         e.fake = 0;
         e.fakeT = 0;
         e.fakeTarget = 0;
@@ -448,6 +450,15 @@
     if (idx === g.phaseIndex) return;
     g.phaseIndex = idx;
     const ph = C.PHASES[idx];
+    // La fase efectiva aplica la dificultad elegida; el arranque (0-10 s) no cambia.
+    const d = g.diff;
+    const maxActive = idx === 0 ? ph.maxActive : Math.max(1, ph.maxActive + d.maxActiveDelta);
+    g.ph = Object.assign({}, ph, {
+      maxActive,
+      minActive: ph.minActive ? Math.max(1, Math.min(maxActive, ph.minActive + d.maxActiveDelta)) : ph.minActive,
+      interval: ph.interval.map((x) => x * d.interval),
+      blockChance: (ph.blockChance || 0) * d.block,
+    });
     g.phaseSpawns = 0;
     g.phaseRepairs = 0;
     g.spawnTimer = ph.firstAt;
@@ -456,7 +467,7 @@
   }
 
   function updateScheduler(g, dt) {
-    const ph = C.PHASES[g.phaseIndex];
+    const ph = g.ph;
     g.spawnTimer -= dt;
     // En las fases altas se garantiza un mínimo de alarmas simultáneas.
     if (ph.minActive && g.activeEvents.length < ph.minActive) g.spawnTimer = Math.min(g.spawnTimer, 1.2);

@@ -1,8 +1,8 @@
 {
-  "name": "pasteurizadora-flash",
+  "name": "lo-que-no-se-ve",
   "version": "0.1.0",
   "private": true,
-  "description": "Pasteurizadora Flash: Turno 60 — juego frenético de 60 segundos operando una pasteurizadora flash.",
+  "description": "Lo que no se ve, también se limpia — colección de juegos de calidad de 60 segundos para envasado de cerveza.",
   "packageManager": "pnpm@10.28.0",
   "engines": {
     "node": ">=21"

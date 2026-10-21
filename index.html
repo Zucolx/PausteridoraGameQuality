@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Pasteurizadora Flash: Turno 60</title>
-    <meta name="description" content="Juego frenético de 60 segundos: opera una pasteurizadora flash y evita que la cerveza se vaya a descarte." />
+    <title>Lo que no se ve, también se limpia</title>
+    <meta name="description" content="Colección de juegos de calidad para envasado de cerveza: pasteurizadora, CIP, cazador de riesgos y paros de línea." />
     <style>
       /* Fuentes locales (SIL OFL, ver assets/fonts/): el juego no necesita conexión. */
       @font-face {
@@ -31,7 +31,7 @@
       body {
         margin: 0;
         height: 100%;
-        background: #0b0e12;
+        background: #0a0605;
         overflow: hidden;
       }
       canvas {
@@ -41,12 +41,21 @@
     </style>
   </head>
   <body>
-    <canvas id="game" tabindex="0" aria-label="Pasteurizadora Flash: Turno 60"></canvas>
+    <canvas id="game" tabindex="0" aria-label="Lo que no se ve, también se limpia"></canvas>
+    <script src="src/core/draw.js"></script>
     <script src="src/config.js"></script>
     <script src="src/minigames.js"></script>
     <script src="src/sim.js"></script>
     <script src="src/audio.js"></script>
     <script src="src/render.js"></script>
+    <script src="src/core/bubble.js"></script>
+    <script src="src/core/world.js"></script>
+    <script src="src/content/manual.js"></script>
+    <script src="src/core/screens.js"></script>
+    <script src="src/games/pasteurizer.js"></script>
+    <script src="src/games/cip.js"></script>
+    <script src="src/games/hunter.js"></script>
+    <script src="src/games/stop.js"></script>
     <script src="src/main.js"></script>
   </body>
 </html>

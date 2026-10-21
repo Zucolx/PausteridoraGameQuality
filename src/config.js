@@ -221,6 +221,14 @@
     },
   ];
 
+  // Selector de dificultad: velocidad de las derivas, espaciado de las fallas,
+  // fallas simultáneas extra (desde los 10 s) y probabilidad de bloqueo en hora pico.
+  CONFIG.DIFFICULTY = {
+    facil: { drift: 0.7, interval: 1.3, maxActiveDelta: -1, block: 0 },
+    normal: { drift: 1, interval: 1, maxActiveDelta: 0, block: 1 },
+    dificil: { drift: 1.2, interval: 0.85, maxActiveDelta: 1, block: 1.4 },
+  };
+
   // Rango final según eficiencia.
   CONFIG.RANKS = [
     { min: 95, rank: 'S' },
@@ -231,7 +239,7 @@
 
   // ---------------------------------------------------------------- Mapa
   // Coordenadas lógicas del lienzo (1280x720). El mapa ocupa x 0-960, y 64-720.
-  CONFIG.VIEW = { width: 1280, height: 720, hud: 64, mapWidth: 960 };
+  CONFIG.VIEW = PF.VIEW || { width: 1280, height: 720, hud: 64, mapWidth: 960 };
   CONFIG.MAP = {
     bounds: { x: 24, y: 88, w: 912, h: 608 },
     start: { x: 480, y: 440 },

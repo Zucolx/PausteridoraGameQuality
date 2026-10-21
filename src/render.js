@@ -127,45 +127,6 @@
     return { temp: 'Temperatura (T)', valve: 'Válvula (V)', pump: 'Bomba (B)', panel: 'Panel' }[id] || id;
   }
 
-  // ------------------------------------------------------------- Creación
-
-  function create(canvas) {
-    const r = {
-      canvas,
-      ctx: canvas.getContext('2d'),
-      scale: 1,
-      ox: 0,
-      oy: 0,
-      dpr: 1,
-      t: 0,
-      fx: { particles: [], floats: [], spawnAcc: 0, shake: 0, flash: 0, banner: null },
-    };
-    resize(r);
-    return r;
-  }
-
-  function resize(r) {
-    const dpr = Math.min(2, globalThis.devicePixelRatio || 1);
-    const w = globalThis.innerWidth;
-    const h = globalThis.innerHeight;
-    r.canvas.width = Math.round(w * dpr);
-    r.canvas.height = Math.round(h * dpr);
-    r.canvas.style.width = w + 'px';
-    r.canvas.style.height = h + 'px';
-    r.dpr = dpr;
-    r.scale = Math.min(w / V.width, h / V.height);
-    r.ox = (w - V.width * r.scale) / 2;
-    r.oy = (h - V.height * r.scale) / 2;
-  }
-
-  function begin(r) {
-    const ctx = r.ctx;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = COL.bg;
-    ctx.fillRect(0, 0, r.canvas.width, r.canvas.height);
-    ctx.setTransform(r.dpr * r.scale, 0, 0, r.dpr * r.scale, r.dpr * r.ox, r.dpr * r.oy);
-  }
-
   function resetFx(r) {
     r.fx = { particles: [], floats: [], spawnAcc: 0, shake: 0, flash: 0, banner: null };
   }
@@ -220,7 +181,6 @@
   }
 
   function update(r, g, dt) {
-    r.t += dt;
     const fx = r.fx;
     const flow = g.lineStopped ? 0 : Sim.effective(g, 'flow');
     fx.spawnAcc += flow * 11 * dt;
@@ -1048,7 +1008,7 @@
   }
 
   function drawGame(r, g) {
-    begin(r);
+    PF.Draw.begin(r);
     const alarms = Sim.alarms(g);
     drawMap(r, g, alarms);
     drawStationPanel(r, g);
@@ -1057,144 +1017,5 @@
     drawSidebar(r, g, alarms);
   }
 
-  // ------------------------------------------------------------ Pantallas
-
-  function overlay(ctx, alpha = 0.78) {
-    ctx.fillStyle = `rgba(6,9,12,${alpha})`;
-    ctx.fillRect(0, 0, V.width, V.height);
-  }
-
-  function drawTitle(r, g) {
-    drawGame(r, g);
-    const ctx = r.ctx;
-    overlay(ctx, 0.84);
-    text(ctx, 'PASTEURIZADORA FLASH', 640, 120, { size: 64, weight: 800, color: COL.gold, align: 'center' });
-    text(ctx, 'TURNO 60', 640, 166, { size: 34, weight: 700, color: COL.red, align: 'center' });
-    text(ctx, 'Eres el único operador entre una cervecería estable y un lote entero de cerveza desechada.', 640, 212, { size: 18, color: COL.text, align: 'center', weight: 500 });
-
-    // Tabla de variables.
-    const rows = C.VAR_KEYS.map((k) => C.VARS[k]);
-    const tx = 290;
-    let ty = 262;
-    text(ctx, 'VARIABLE', tx, ty, { size: 13, color: COL.dim, weight: 700 });
-    text(ctx, 'IDEAL', tx + 270, ty, { size: 13, color: COL.dim, weight: 700, align: 'center' });
-    text(ctx, 'RANGO', tx + 400, ty, { size: 13, color: COL.dim, weight: 700, align: 'center' });
-    text(ctx, 'ESTACIÓN', tx + 560, ty, { size: 13, color: COL.dim, weight: 700, align: 'center' });
-    for (const cfg of rows) {
-      ty += 30;
-      text(ctx, cfg.label, tx, ty, { size: 18 });
-      text(ctx, `${Sim.fmt(cfg.ideal, cfg.decimals)} ${cfg.unit}`, tx + 270, ty, { size: 18, align: 'center', family: MONO, color: COL.gold });
-      text(ctx, `${Sim.fmt(cfg.min, cfg.decimals)}–${Sim.fmt(cfg.max, cfg.decimals)}`, tx + 400, ty, { size: 18, align: 'center', family: MONO, color: COL.ok });
-      text(ctx, stationShortName(cfg.station), tx + 560, ty, { size: 18, align: 'center' });
-    }
-
-    const lines = [
-      'Fuera de rango más de 0,4 s → esa cerveza se desvía a DESCARTE.',
-      'Corre a la estación marcada, pulsa E y corrige con A/D o con el mini-juego de reparación.',
-      'No cierres la válvula al mínimo: 2 s ahí y la línea se para.',
-    ];
-    lines.forEach((l, i) => text(ctx, l, 640, 410 + i * 28, { size: 17, color: COL.text, align: 'center', weight: 500 }));
-
-    const keys = [
-      ['WASD / Flechas', 'moverse'],
-      ['E', 'operar estación'],
-      ['A / D', 'ajustar'],
-      ['ESPACIO · 1-4 · Flechas', 'reparar'],
-    ];
-    keys.forEach(([k, d], i) => {
-      const kx = 250 + i * 260;
-      ctx.fillStyle = '#1d262f';
-      roundRect(ctx, kx - 110, 512, 220, 56, 8);
-      ctx.fill();
-      text(ctx, k, kx, 536, { size: 17, weight: 700, color: COL.gold, align: 'center' });
-      text(ctx, d, kx, 557, { size: 14, color: COL.dim, align: 'center' });
-    });
-
-    const pulse = 0.6 + 0.4 * Math.sin(r.t * 4);
-    ctx.globalAlpha = pulse;
-    text(ctx, 'Pulsa ENTER o ESPACIO para empezar el turno', 640, 630, { size: 26, weight: 700, color: COL.text, align: 'center' });
-    ctx.globalAlpha = 1;
-    text(ctx, 'Necesitas teclado · M silencia el sonido', 640, 664, { size: 14, color: COL.faint, align: 'center' });
-  }
-
-  function drawPause(r, g) {
-    drawGame(r, g);
-    const ctx = r.ctx;
-    overlay(ctx, 0.7);
-    text(ctx, 'PAUSA', 640, 340, { size: 64, weight: 800, align: 'center' });
-    text(ctx, 'P para continuar · R para reiniciar', 640, 384, { size: 18, color: COL.dim, align: 'center' });
-  }
-
-  function rankColor(rank) {
-    return { S: COL.gold, A: COL.ok, B: COL.warn, C: COL.red }[rank];
-  }
-
-  function drawEnd(r, g, res, best) {
-    drawGame(r, g);
-    const ctx = r.ctx;
-    overlay(ctx, 0.82);
-    const plant = res.endReason === 'plant';
-    text(ctx, plant ? 'PARO DE PLANTA' : 'FIN DEL TURNO', 640, 104, { size: 46, weight: 800, color: plant ? COL.red : COL.text, align: 'center' });
-    if (plant) text(ctx, 'Demasiadas alarmas rojas a la vez durante 5 s. Rango máximo: C.', 640, 134, { size: 16, color: '#ffb3b3', align: 'center' });
-
-    // Rango.
-    const rc = rankColor(res.rank);
-    ctx.save();
-    ctx.shadowColor = rc;
-    ctx.shadowBlur = 30;
-    ctx.strokeStyle = rc;
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    ctx.arc(300, 300, 96, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
-    text(ctx, res.rank, 300, 340, { size: 120, weight: 800, color: rc, align: 'center' });
-    text(ctx, 'RANGO', 300, 428, { size: 16, weight: 700, color: COL.dim, align: 'center' });
-
-    // Números.
-    const rows = [
-      ['HL procesados', Sim.fmt(res.processed, 1) + ' HL', COL.text],
-      ['HL aprobados', Sim.fmt(res.approved, 1) + ' HL', COL.gold],
-      ['HL desechados', Sim.fmt(res.discarded, 1) + ' HL', COL.red],
-      ['Eficiencia', Sim.fmt(res.efficiency, 1) + '%', rc],
-      ['Causa principal', res.mainCauseLabel || 'ninguna', res.mainCauseLabel ? COL.red : COL.ok],
-      ['Fallas controladas', `${res.resolved} de ${res.spawned}`, COL.text],
-    ];
-    rows.forEach(([k, v, c], i) => {
-      const y = 200 + i * 38;
-      text(ctx, k, 470, y, { size: 18, color: COL.dim });
-      text(ctx, v, 1000, y, { size: 22, weight: 700, color: c, align: 'right', family: i === 4 ? FONT : MONO });
-      ctx.fillStyle = '#1d262f';
-      ctx.fillRect(470, y + 12, 530, 1);
-    });
-
-    // Desglose del descarte por causa.
-    const maxHl = res.causes.length ? res.causes[0].hl : 1;
-    text(ctx, 'DESCARTE POR CAUSA', 470, 448, { size: 13, weight: 700, color: COL.dim });
-    if (!res.causes.length) text(ctx, 'Ni una gota al desagüe. Turno impecable.', 470, 476, { size: 16, color: COL.ok });
-    res.causes.slice(0, 4).forEach((c, i) => {
-      const y = 462 + i * 26;
-      text(ctx, c.label, 470, y + 14, { size: 15, color: COL.text });
-      ctx.fillStyle = COL.red;
-      ctx.globalAlpha = 0.85;
-      ctx.fillRect(640, y + 3, 280 * (c.hl / maxHl), 14);
-      ctx.globalAlpha = 1;
-      text(ctx, Sim.fmt(c.hl, 1) + ' HL', 1000, y + 15, { size: 15, align: 'right', family: MONO, color: COL.dim });
-    });
-
-    ctx.font = font(18, 500);
-    const lines = wrap(ctx, '“' + Sim.summaryText(res) + '”', 900);
-    lines.forEach((l, i) => text(ctx, l, 640, 600 + i * 24, { size: 18, weight: 500, color: COL.text, align: 'center' }));
-
-    if (best != null) {
-      const isBest = Math.abs(best - res.efficiency) < 1e-9;
-      text(ctx, isBest ? '¡Nuevo récord personal!' : `Récord: ${Sim.fmt(best, 1)}%`, 300, 470, { size: 16, weight: 700, color: isBest ? COL.gold : COL.dim, align: 'center' });
-    }
-    const pulse = 0.6 + 0.4 * Math.sin(r.t * 4);
-    ctx.globalAlpha = pulse;
-    text(ctx, 'ENTER para otro turno', 640, 688, { size: 22, weight: 700, align: 'center' });
-    ctx.globalAlpha = 1;
-  }
-
-  PF.Render = { create, resize, resetFx, update, onSignal, drawGame, drawTitle, drawPause, drawEnd };
+  PF.Render = { resetFx, update, onSignal, drawGame };
 })();

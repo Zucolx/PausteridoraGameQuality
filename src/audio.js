@@ -56,6 +56,11 @@
     error() {
       tone({ freq: 160, type: 'square', dur: 0.18, vol: 0.12 });
     },
+    // Burbuja "¡Esto no va así!": dos notas descendentes tipo "uh-oh".
+    oops() {
+      tone({ freq: 420, type: 'triangle', dur: 0.14, vol: 0.16 });
+      tone({ freq: 300, type: 'triangle', dur: 0.22, vol: 0.16, delay: 0.15 });
+    },
     enter() {
       tone({ freq: 340, type: 'triangle', dur: 0.06, vol: 0.1 });
     },
