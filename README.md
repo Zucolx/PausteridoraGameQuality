@@ -10,8 +10,30 @@ principal de descarte y rango (S/A/B/C)**.
 
 ## Cómo jugar
 
-Abre `index.html` en el navegador (funciona directamente desde el disco, sin compilar).
-También puedes servirlo con `npm start` y entrar en <http://localhost:8080>.
+**Sin conexión:** descarga [`dist/pasteurizadora-flash.html`](dist/pasteurizadora-flash.html)
+y ábrelo con doble clic en cualquier navegador moderno. Es un único archivo (~170 KB) con
+el código y las fuentes incrustados: no pide nada a internet, se puede copiar a un USB o
+mandar por correo.
+
+**Desde el código:** abre `index.html` directamente (también funciona sin conexión, porque
+las fuentes están en `assets/fonts/`) o sírvelo con pnpm:
+
+```
+pnpm install
+pnpm start          # http://localhost:8080
+```
+
+### Generar el exportable
+
+```
+pnpm build                      # → dist/pasteurizadora-flash.html
+pnpm build ruta/otro-nombre.html
+```
+
+`scripts/build.mjs` toma `index.html`, incrusta cada `<script src>` y convierte las fuentes
+en `data:` URIs. Falla si queda algún recurso externo. El archivo de `dist/` se versiona
+para poder descargarlo desde GitHub; `pnpm test` avisa si quedó desactualizado respecto al
+código, así que después de tocar `src/` hay que volver a ejecutar `pnpm build`.
 
 | Tecla | Acción |
 |---|---|
@@ -74,7 +96,10 @@ Colores de alarma: **amarillo** = activa o cerca del límite; **rojo** = descart
 ## Estructura
 
 ```
-index.html          lienzo y carga de scripts
+index.html          lienzo, fuentes locales y carga de scripts
+dist/               exportable de un solo archivo para jugar sin conexión (generado)
+assets/fonts/       Rajdhani y Share Tech Mono (SIL Open Font License)
+scripts/build.mjs   genera el exportable
 src/config.js       todos los números de balance, el mapa y la curva de dificultad
 src/minigames.js    lógica pura de los cinco mini-juegos
 src/sim.js          simulación determinista (variables, eventos, jugador, contabilidad)
@@ -87,7 +112,7 @@ test/               pruebas de la simulación con node:test
 La simulación no toca el DOM y acepta una semilla, así que se prueba en Node:
 
 ```
-npm test
+pnpm test
 ```
 
 Las pruebas incluyen un operador automático que recorre el turno con tiempos de viaje

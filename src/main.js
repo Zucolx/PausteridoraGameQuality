@@ -194,5 +194,10 @@
     start: startGame,
   };
 
+  // El canvas no pide las fuentes por sí solo: se cargan antes del primer turno.
+  if (document.fonts) {
+    for (const f of ['500 16px Rajdhani', '600 16px Rajdhani', '700 16px Rajdhani', '16px "Share Tech Mono"']) document.fonts.load(f).catch(() => {});
+  }
+
   requestAnimationFrame(frame);
 })();
