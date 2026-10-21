@@ -1,0 +1,11 @@
+{
+  "name": "pasteurizadora-flash",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pasteurizadora Flash: Turno 60 — juego frenético de 60 segundos operando una pasteurizadora flash.",
+  "scripts": {
+    "start": "npx --yes http-server -c-1 -p 8080 .",
+    "test": "node --test"
+  },
+  "license": "MIT"
+}
