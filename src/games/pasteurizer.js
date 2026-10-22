@@ -153,10 +153,10 @@
       'No cierres la válvula del todo: 2 s al mínimo y se para la línea.',
     ],
     controls: [
-      ['WASD', 'moverse'],
-      ['E', 'operar'],
-      ['A / D', 'ajustar'],
-      ['ESPACIO · 1-4', 'reparar'],
+      ['WASD', 'moverse', 'lstick'],
+      ['E', 'operar', 'x'],
+      ['A / D', 'ajustar', 'dpadLR'],
+      ['ESPACIO · 1-4', 'reparar', ['a', 'lb']],
     ],
     difficulties: {
       facil: ['Las variables derivan más despacio', 'Fallas más espaciadas, una menos a la vez', 'Sin bloqueos de estación'],

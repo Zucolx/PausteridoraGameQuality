@@ -30,6 +30,8 @@ test('el exportable es un único HTML sin recursos externos', () => {
     "id: 'cip'",
     "id: 'hunter'",
     "id: 'stop'",
+    "id: 'pu'",
+    'PF.Pad = {',
     'requestAnimationFrame(frame)',
   ]) {
     assert.ok(html.includes(name), `falta ${name}`);

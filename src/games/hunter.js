@@ -704,10 +704,10 @@
       'Cada limpieza muestra una ficha "Sabías que" del manual.',
     ],
     controls: [
-      ['WASD', 'moverse'],
-      ['E', 'limpiar / revisar'],
-      ['1-4', 'herramienta'],
-      ['ESPACIO', 'aplicar'],
+      ['WASD', 'moverse', 'lstick'],
+      ['E', 'limpiar / revisar', 'x'],
+      ['1-4', 'herramienta', ['lb', 'rb', 'lt', 'rt']],
+      ['ESPACIO', 'aplicar', 'a'],
     ],
     difficulties: {
       facil: ['Linterna grande y flecha hacia el foco más cercano', 'Las herramientas dicen para qué sirven', 'Sin penalización de tiempo'],

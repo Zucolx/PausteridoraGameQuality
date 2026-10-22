@@ -942,10 +942,10 @@
       'Verificación: hisopo + luminómetro. Menos de 50 URL = lote aprobado.',
     ],
     controls: [
-      ['WASD', 'moverse'],
-      ['E', 'operar'],
-      ['ESPACIO', 'confirmar / frotar'],
-      ['TAB', 'CIP Master Plan'],
+      ['WASD', 'moverse', 'lstick'],
+      ['E', 'operar', 'x'],
+      ['ESPACIO', 'confirmar / frotar', 'a'],
+      ['TAB', 'CIP Master Plan', 'y'],
     ],
     difficulties: {
       facil: ['Los tanques dicen si son alcalinos o ácidos', 'El panel marca el valor objetivo del TACT', 'Poca suciedad y CIP rápido'],

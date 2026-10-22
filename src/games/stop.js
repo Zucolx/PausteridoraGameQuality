@@ -607,10 +607,10 @@
       'Ignora las notificaciones que te meten prisa: arrancar sin protocolo = cerveza contaminada.',
     ],
     controls: [
-      ['WASD', 'moverse'],
-      ['E', 'operar'],
-      ['ESPACIO', 'mantener acción'],
-      ['TAB', 'plan de reacción'],
+      ['WASD', 'moverse', 'lstick'],
+      ['E', 'operar', 'x'],
+      ['ESPACIO', 'mantener acción', 'a'],
+      ['TAB', 'plan de reacción', 'y'],
     ],
     difficulties: {
       facil: ['La tarjeta muestra el protocolo y resalta las estaciones', '3 vidas', 'Pocas notificaciones de presión'],

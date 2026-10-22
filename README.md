@@ -1,9 +1,10 @@
 # Lo que no se ve, también se limpia
 
-Colección de cuatro juegos de 60 segundos sobre calidad en el envasado de cerveza. Usa la
+Colección de cinco juegos cortos sobre calidad en el envasado de cerveza. Usa la
 estética del afiche (negros, naranjas quemados, latón steampunk y toques de Halloween).
 Cada juego tiene **tres dificultades** (Fácil, Normal y Difícil) y termina con un
-**Reporte de Calidad** con rango S/A/B/C.
+**Reporte de Calidad** con rango S/A/B/C. Se juega con **teclado y ratón o con mando de
+PlayStation o Xbox**: los botones que se ven en pantalla cambian solos según el mando.
 
 Cuando el jugador se equivoca, sobre el operario aparece una **burbuja de pensamiento**
 que dice **"¡Esto no va así!"** y explica el porqué, por ejemplo *"El agua caliente para
@@ -16,11 +17,12 @@ al final en el reporte, en la sección "Lo que no va así".
 | 2 | **CIP Rush** · El Turno de la Limpieza | Químico correcto → TACT en el panel → escobillado de la llenadora → ATP < 50 URL. |
 | 3 | **El Cazador de Riesgos** · Recorrido UV | Línea a oscuras: encontrar 5 focos de contaminación con linterna UV y limpiarlos con la herramienta correcta. |
 | 4 | **Línea en Paro** · Decisiones Bajo Presión | Aplicar el plan de reacción según cuánto lleva parada la línea, sin ceder a la presión de arrancar ya. |
+| 5 | **Control de UP** · Unidades de Pasteurización | Panel de control sin muñeco: mantener cada lote entre 24 y 30 UP (ideal 26) con la temperatura y decidir con la llave de paso si va a la llenadora o al descarte. Duración ajustable de 40 a 60 s. |
 
 ## Cómo jugar
 
 **Sin conexión:** descarga [`dist/lo-que-no-se-ve.html`](dist/lo-que-no-se-ve.html) y
-ábrelo con doble clic en cualquier navegador moderno. Es un único archivo (~310 KB) con
+ábrelo con doble clic en cualquier navegador moderno. Es un único archivo (~380 KB) con
 el código y las fuentes incrustados: no pide nada a internet, así que se puede copiar a
 un USB o mandar por correo.
 
@@ -33,12 +35,35 @@ pnpm start          # http://localhost:8080
 ```
 
 Flujo: **menú de juegos** (← → o ratón) → **dificultad** (↑ ↓, 1-3 o clic: cada tarjeta
-explica qué cambia) → **turno de 60 s** → **Reporte de Calidad** (ENTER repetir · D
-cambiar dificultad · ESC menú). P pausa y M silencia en cualquier juego. Los récords
-se guardan por juego y por dificultad en el navegador.
+explica qué cambia; en Control de UP también la **duración**, ← →) → **turno** →
+**Reporte de Calidad** (ENTER repetir · D cambiar dificultad · ESC menú). P pausa y M
+silencia en cualquier juego. Los récords se guardan por juego y por dificultad en el
+navegador.
 
 Controles comunes: **WASD/flechas** moverse · **E** operar (E o Esc para salir) ·
 **Espacio** confirmar o mantener · **TAB** manual de consulta · **1-4** opciones.
+
+### Mando (PlayStation / Xbox)
+
+Conecta el mando y pulsa cualquier botón: el juego detecta si es de PlayStation (✕ ○ □ △,
+L1/R1, OPTIONS) o de Xbox (A B X Y, LB/RB, MENU) y desde ese momento todas las ayudas en
+pantalla muestran sus botones. Si vuelves a tocar el teclado o el ratón, las ayudas
+vuelven a mostrar teclas. Cualquier otro mando se muestra con los botones de Xbox.
+
+| Acción | PlayStation | Xbox |
+|---|---|---|
+| Menús: elegir / aceptar / volver | cruceta o stick · ✕ · ○ | cruceta o stick · A · B |
+| Pausa · reiniciar desde la pausa | OPTIONS · △ | MENU · Y |
+| Control de UP: temperatura | cruceta ▲▼ o stick izquierdo | cruceta ▲▼ o stick izquierdo |
+| Control de UP: llave → llenadora / descarte / alternar | ✕ / ○ / R1 | A / B / RB |
+| Control de UP: ayuda (pausa el turno) | △ | Y |
+| Juegos de mapa: mover · operar · confirmar · manual | stick · □ · ✕ · △ | stick · X · A · Y |
+| Juegos de mapa: opciones 1-4 | L1 · R1 · L2 · R2 | LB · RB · LT · RT |
+
+En los juegos de mapa (Pasteurizadora, CIP Rush, Cazador y Línea en Paro) el mando
+funciona con esa traducción. Sus pantallas de inicio muestran los botones del mando,
+pero dentro del turno las ayudas siguen mostrando teclas. En Control de UP todo el
+panel está pensado para el mando.
 
 ### Generar el exportable
 
@@ -132,6 +157,35 @@ quiere arrancar YA") ofrecen **Y = arrancar ya**. Arrancar sin el protocolo comp
 saca **cerveza contaminada** y cuesta una vida (3/2/1 según dificultad). En Difícil es
 game over directo.
 
+### 5 · Control de UP
+
+Basado en la fórmula clásica para cerveza y bebidas:
+
+**UP = t × 1,393^(T − 60)**, donde UP son las unidades de pasteurización acumuladas,
+t los minutos a la temperatura T, T la temperatura real del producto en °C, 60 °C la
+referencia (1 UP por minuto) y 1,393 el factor derivado de z = 10 °C.
+
+- Los lotes cruzan el túnel durante **t minutos** (10 min a velocidad normal) y acumulan
+  UP minuto a minuto según la **temperatura real**. Si la temperatura cambia mientras un
+  lote está dentro, su UP final lo refleja.
+- El jugador maneja la **consigna** de temperatura. La temperatura real la sigue con
+  retraso y con perturbaciones: caída o pico de vapor, botellas frías y cambios de
+  velocidad de la línea, que cambian t.
+- **Menos de 24 UP:** subpasteurizada, turbia y con bolitas verde pálido. **24–30 UP:**
+  en rango, dorada (ideal 26). **Más de 30 UP:** sobrepasteurizada, con aspecto quemado.
+  El aspecto se ve en cada botella al salir del túnel.
+- La **llave de paso** decide el destino de cada lote al llegar a ella. Puntos: lote
+  en rango a la llenadora +10 (+15 si está entre 25 y 27); lote malo al descarte +5
+  (decisión correcta); lote bueno al descarte −5 (cerveza buena botada); lote malo a la
+  llenadora −20 (la burbuja explica el porqué).
+- El panel muestra la fórmula con los números actuales, el indicador de UP del lote que
+  entra, el termómetro con la ventana de temperatura buena y el historial de lotes.
+  La **ayuda** (H / △ / Y) pausa el turno y explica la fórmula y los tres aspectos.
+- **Duración:** 40, 45, 50, 55 o 60 s. **Dificultad:** Fácil responde rápido, tiene
+  pocas perturbaciones y sugiere la llave. Normal añade cambios de velocidad y no da
+  sugerencias. Difícil tarda más en responder, tiene perturbaciones fuertes y no muestra
+  estimaciones ni la ventana buena.
+
 ## Estructura
 
 ```
@@ -139,15 +193,16 @@ index.html              lienzo, fuentes locales y carga de scripts
 dist/                   exportable de un solo archivo (generado con pnpm build)
 assets/fonts/           Rajdhani y Share Tech Mono (SIL Open Font License)
 scripts/build.mjs       genera el exportable
-src/core/draw.js        lienzo, tema del afiche, HUD, paneles, jugador, utilidades
+src/core/pad.js         mandos PS/Xbox: detección, flancos y traducción a acciones
+src/core/draw.js        lienzo, tema del afiche, HUD, paneles, jugador, botones del mando
 src/core/bubble.js      burbuja de pensamiento "¡Esto no va así!"
 src/core/world.js       movimiento cenital con colisiones y estaciones
 src/core/screens.js     menú, selector de dificultad, pausa y Reporte de Calidad
 src/content/manual.js   contenido técnico de los juegos (revisar con el manual)
-src/games/*.js          un archivo por juego (CIP, cazador, paro, adaptador pasteurizadora)
+src/games/*.js          un archivo por juego (CIP, cazador, paro, control de UP, adaptador pasteurizadora)
 src/config.js, sim.js, minigames.js, render.js   motor de la Pasteurizadora Flash
 src/audio.js            efectos sintetizados con WebAudio
-src/main.js             teclado, ratón, bucle y pantallas
+src/main.js             teclado, ratón, mando, bucle y pantallas
 test/                   pruebas con node:test
 ```
 
@@ -158,5 +213,5 @@ pnpm test
 ```
 
 Las pruebas cubren las reglas de cada juego (caminos correctos e incorrectos, burbujas,
-puntuación y game over), el balance de la pasteurizadora con un operador automático y
-que el exportable esté completo y al día.
+puntuación y game over), la fórmula de UP, la lectura de mandos PS/Xbox, el balance de la
+pasteurizadora con un operador automático y que el exportable esté completo y al día.

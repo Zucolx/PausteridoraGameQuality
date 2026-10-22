@@ -144,6 +144,185 @@
     return w;
   }
 
+  // ------------------------------------------------- Botones de mando
+
+  // Dispositivo con el que se está jugando: 'keyboard', 'ps' o 'xbox' (lo actualiza main.js).
+  const InputState = (PF.InputState = PF.InputState || { device: 'keyboard', padType: null });
+
+  const FACE = {
+    ps: { a: '#8fb8ff', b: '#ff7a7a', x: '#ff9be0', y: '#6fe0a8' },
+    xbox: { a: '#5cc85c', b: '#e8473b', x: '#3d8fe0', y: '#f2c230' },
+  };
+
+  // Dibuja un botón del mando centrado en (x, y). Devuelve el ancho.
+  function padGlyph(ctx, type, name, x, y, size = 16) {
+    const r = size * 0.95;
+    if (['a', 'b', 'x', 'y'].includes(name)) {
+      const color = FACE[type === 'ps' ? 'ps' : 'xbox'][name];
+      ctx.save();
+      ctx.lineWidth = Math.max(2, size * 0.16);
+      if (type === 'ps') {
+        ctx.fillStyle = '#17171d';
+        ctx.strokeStyle = '#4a4a55';
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(2.5, size * 0.17);
+        const k = r * 0.45;
+        ctx.beginPath();
+        if (name === 'a') {
+          ctx.moveTo(x - k, y - k);
+          ctx.lineTo(x + k, y + k);
+          ctx.moveTo(x + k, y - k);
+          ctx.lineTo(x - k, y + k);
+        } else if (name === 'b') {
+          ctx.arc(x, y, k * 1.05, 0, Math.PI * 2);
+        } else if (name === 'x') {
+          ctx.rect(x - k * 0.9, y - k * 0.9, k * 1.8, k * 1.8);
+        } else {
+          ctx.moveTo(x, y - k * 1.1);
+          ctx.lineTo(x + k * 1.05, y + k * 0.75);
+          ctx.lineTo(x - k * 1.05, y + k * 0.75);
+          ctx.closePath();
+        }
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+        ctx.stroke();
+        text(ctx, name.toUpperCase(), x, y + size * 0.36, { size: size * 1.05, weight: 800, color: '#fff', align: 'center' });
+      }
+      ctx.restore();
+      return r * 2;
+    }
+    if (name.startsWith('dpad') || ['up', 'down', 'left', 'right'].includes(name)) {
+      const arm = size * 0.42;
+      const len = size * 0.95;
+      const on = {
+        up: ['dpad', 'dpadUD', 'up'].includes(name),
+        down: ['dpad', 'dpadUD', 'down'].includes(name),
+        left: ['dpad', 'dpadLR', 'left'].includes(name),
+        right: ['dpad', 'dpadLR', 'right'].includes(name),
+      };
+      ctx.save();
+      ctx.fillStyle = '#2a2a33';
+      ctx.fillRect(x - arm, y - len, arm * 2, len * 2);
+      ctx.fillRect(x - len, y - arm, len * 2, arm * 2);
+      ctx.fillStyle = T.orange;
+      const seg = len - arm;
+      if (on.up) ctx.fillRect(x - arm + 2, y - len + 2, arm * 2 - 4, seg);
+      if (on.down) ctx.fillRect(x - arm + 2, y + arm - 2, arm * 2 - 4, seg);
+      if (on.left) ctx.fillRect(x - len + 2, y - arm + 2, seg, arm * 2 - 4);
+      if (on.right) ctx.fillRect(x + arm - 2, y - arm + 2, seg, arm * 2 - 4);
+      ctx.restore();
+      return len * 2;
+    }
+    if (name.startsWith('lstick') || name.startsWith('rstick')) {
+      ctx.save();
+      ctx.fillStyle = '#17171d';
+      ctx.strokeStyle = '#6a6a78';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#3a3a46';
+      ctx.beginPath();
+      ctx.arc(x, y, r * 0.62, 0, Math.PI * 2);
+      ctx.fill();
+      text(ctx, name[0].toUpperCase(), x, y + size * 0.3, { size: size * 0.85, weight: 800, color: '#fff', align: 'center' });
+      ctx.fillStyle = T.orange;
+      const a = r * 1.25;
+      const arrows = name.endsWith('V') ? [-1, 1].map((d) => [0, d]) : name.endsWith('H') ? [-1, 1].map((d) => [d, 0]) : [];
+      for (const [dx, dy] of arrows) {
+        ctx.beginPath();
+        ctx.moveTo(x + dx * (a + 5), y + dy * (a + 5));
+        ctx.lineTo(x + dx * a + dy * 5, y + dy * a + dx * 5);
+        ctx.lineTo(x + dx * a - dy * 5, y + dy * a - dx * 5);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+      return r * 2;
+    }
+    // Gatillos, hombros y botones de menú: etiqueta en cápsula.
+    const label = PF.Pad ? PF.Pad.label(type, name) : name.toUpperCase();
+    ctx.font = font(size * 0.8, 800);
+    const w = Math.max(size * 1.9, ctx.measureText(label).width + size * 0.9);
+    const h = size * 1.5;
+    ctx.fillStyle = '#2a2a33';
+    roundRect(ctx, x - w / 2, y - h / 2, w, h, h / 2);
+    ctx.fill();
+    ctx.strokeStyle = '#6a6a78';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    text(ctx, label, x, y + size * 0.28, { size: size * 0.8, weight: 800, color: '#fff', align: 'center' });
+    return w;
+  }
+
+  function keyWidth(ctx, label, size) {
+    ctx.font = font(size, 800);
+    return Math.max(size * 1.5, ctx.measureText(label).width + size);
+  }
+
+  // Control según el dispositivo activo: tecla en teclado, botón(es) en el mando.
+  // spec = { key: 'W / S', pad: 'dpadUD' | ['dpadUD', 'lstickV'] }. Dibuja desde x (izquierda); devuelve el ancho.
+  function control(ctx, spec, x, y, { size = 15, color = T.orange, device = InputState.device } = {}) {
+    if (device === 'keyboard' || !spec.pad) {
+      const w = keyWidth(ctx, spec.key, size);
+      keycap(ctx, spec.key, x + w / 2, y, { size, color });
+      return w;
+    }
+    const list = Array.isArray(spec.pad) ? spec.pad : [spec.pad];
+    let cx = x;
+    list.forEach((name, i) => {
+      if (i) {
+        text(ctx, '/', cx + 6, y + size * 0.35, { size, weight: 700, color: T.dim, align: 'center' });
+        cx += 12;
+      }
+      const w = measureGlyph(ctx, device, name, size);
+      padGlyph(ctx, device, name, cx + w / 2, y, size);
+      cx += w;
+    });
+    return cx - x;
+  }
+
+  function measureGlyph(ctx, type, name, size) {
+    if (['a', 'b', 'x', 'y'].includes(name) || name.includes('stick')) return size * 1.9;
+    if (name.startsWith('dpad') || ['up', 'down', 'left', 'right'].includes(name)) return size * 1.9;
+    const label = PF.Pad ? PF.Pad.label(type, name) : name.toUpperCase();
+    ctx.font = font(size * 0.8, 800);
+    return Math.max(size * 1.9, ctx.measureText(label).width + size * 0.9);
+  }
+
+  // Fila de ayudas "[control] acción" separadas; devuelve el ancho total.
+  function hints(ctx, items, x, y, { size = 15, gap = 26, color = T.orange, ink = T.ink, align = 'left' } = {}) {
+    const widths = items.map(([spec, label]) => {
+      const cw = spec.key || spec.pad ? measureControl(ctx, spec, size) : 0;
+      ctx.font = font(size + 1, 600);
+      return cw + 8 + ctx.measureText(label).width;
+    });
+    const total = widths.reduce((a, b) => a + b, 0) + gap * (items.length - 1);
+    let cx = align === 'center' ? x - total / 2 : align === 'right' ? x - total : x;
+    items.forEach(([spec, label], i) => {
+      const cw = control(ctx, spec, cx, y, { size, color });
+      text(ctx, label, cx + cw + 8, y + size * 0.38, { size: size + 1, weight: 600, color: ink });
+      cx += widths[i] + gap;
+    });
+    return total;
+  }
+
+  function measureControl(ctx, spec, size, device = InputState.device) {
+    if (device === 'keyboard' || !spec.pad) return keyWidth(ctx, spec.key, size);
+    const list = Array.isArray(spec.pad) ? spec.pad : [spec.pad];
+    return list.reduce((a, n, i) => a + measureGlyph(ctx, device, n, size) + (i ? 12 : 0), 0);
+  }
+
   // Calabaza de dificultad (1-3 encendidas).
   function pumpkin(ctx, x, y, s, lit) {
     ctx.save();
@@ -395,7 +574,7 @@
       text(ctx, String(s.value), x, 50, { size: 22, weight: 700, color: s.color || T.ink, family: s.mono === false ? FONT : MONO });
       x += s.width || 160;
     }
-    text(ctx, 'P pausa · M sonido', VIEW.width - 14, 14, { size: 11, color: T.faint, align: 'right', base: 'top' });
+    hints(ctx, [[{ key: 'P', pad: 'start' }, 'pausa']], VIEW.width - 14, 18, { size: 11, align: 'right', ink: T.faint, color: '#6e5a48' });
   }
 
   function sidebar(ctx, title) {
@@ -589,6 +768,10 @@
     progressBar,
     ring,
     keycap,
+    padGlyph,
+    control,
+    hints,
+    InputState,
     pumpkin,
     player,
     floor,

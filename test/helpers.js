@@ -1,5 +1,6 @@
 // Carga los módulos de la colección (scripts clásicos que cuelgan de globalThis.PF) en Node.
 // Solo la lógica: las funciones de dibujo no se llaman en las pruebas.
+require('../src/core/pad.js');
 require('../src/core/draw.js');
 require('../src/config.js');
 require('../src/minigames.js');
@@ -12,6 +13,7 @@ require('../src/games/pasteurizer.js');
 require('../src/games/cip.js');
 require('../src/games/hunter.js');
 require('../src/games/stop.js');
+require('../src/games/pu.js');
 
 const PF = globalThis.PF;
 const C = PF.CONFIG;

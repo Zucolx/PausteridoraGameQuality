@@ -1,11 +1,13 @@
-// Arranque de la colección: teclado y ratón, bucle principal y pantallas
-// (menú → dificultad → turno → pausa → reporte de calidad).
+// Arranque de la colección: teclado, ratón y mando (PS/Xbox), bucle principal y
+// pantallas (menú → dificultad/duración → turno → pausa → reporte de calidad).
 (function () {
   'use strict';
   const PF = globalThis.PF;
   const D = PF.Draw;
   const S = PF.Screens;
+  const Pad = PF.Pad;
   const Audio = PF.Audio;
+  const IS = PF.InputState;
 
   const canvas = document.getElementById('game');
   const r = D.createSurface(canvas);
@@ -19,10 +21,12 @@
   let screen = 'menu';
   let sel = 0;
   let diffSel = 1;
+  let durSel = {};
   let inst = null;
   let report = null;
   let isRecord = false;
   let records = loadRecords();
+  let padPrev = null;
   let last = performance.now();
 
   const MOVE = {
@@ -36,7 +40,7 @@
     ArrowRight: [1, 0],
   };
   const DIR = { KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right' };
-  const NAMED = { KeyE: 'interact', Escape: 'cancel', KeyQ: 'cancel', Space: 'space', Enter: 'confirm', NumpadEnter: 'confirm', Tab: 'tab', KeyY: 'y', KeyX: 'x' };
+  const NAMED = { KeyE: 'interact', Escape: 'cancel', KeyQ: 'cancel', Space: 'space', Enter: 'confirm', NumpadEnter: 'confirm', Tab: 'tab', KeyY: 'y', KeyX: 'x', KeyH: 'help' };
   const DIGIT = { Digit1: '1', Digit2: '2', Digit3: '3', Digit4: '4', Numpad1: '1', Numpad2: '2', Numpad3: '3', Numpad4: '4' };
   const PREVENT = new Set(['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 
@@ -64,8 +68,23 @@
     return D.DIFFICULTIES[diffSel].id;
   }
 
+  // Duración elegida para los juegos que la permiten (por defecto la más larga).
+  function duration() {
+    const list = game().durations;
+    if (!list) return null;
+    const i = durSel[game().id] ?? list.length - 1;
+    return list[Math.max(0, Math.min(list.length - 1, i))];
+  }
+
+  function setDuration(delta) {
+    const list = game().durations;
+    if (!list) return;
+    const i = durSel[game().id] ?? list.length - 1;
+    durSel[game().id] = Math.max(0, Math.min(list.length - 1, i + delta));
+  }
+
   function startGame() {
-    inst = game().create(diffId());
+    inst = game().create(diffId(), { duration: duration() });
     report = null;
     held.clear();
     pressed = [];
@@ -96,61 +115,74 @@
     screen = 'menu';
   }
 
+  function pause() {
+    screen = 'paused';
+    held.clear();
+    if (Audio) Audio.setSiren(false);
+  }
+
+  // Acciones de las pantallas fuera del turno; las comparten teclado y mando.
+  function shell(action, digit) {
+    const dirs = ['up', 'down', 'left', 'right'];
+    if (screen === 'menu') {
+      if (action === 'left') sel = (sel + games.length - 1) % games.length;
+      else if (action === 'right') sel = (sel + 1) % games.length;
+      else if (action === 'digit' && digit <= games.length) {
+        sel = digit - 1;
+        screen = 'setup';
+      } else if (action === 'confirm' || action === 'start') screen = 'setup';
+    } else if (screen === 'setup') {
+      if (action === 'up') diffSel = Math.max(0, diffSel - 1);
+      else if (action === 'down') diffSel = Math.min(2, diffSel + 1);
+      else if (action === 'left') setDuration(-1);
+      else if (action === 'right') setDuration(1);
+      else if (action === 'digit' && digit <= 3) {
+        diffSel = digit - 1;
+        startGame();
+      } else if (action === 'confirm' || action === 'start') startGame();
+      else if (action === 'back') screen = 'menu';
+    } else if (screen === 'report') {
+      if (action === 'confirm' || action === 'start') startGame();
+      else if (action === 'alt') screen = 'setup';
+      else if (action === 'back') toMenu();
+    } else if (screen === 'paused') {
+      if (action === 'start') screen = 'play';
+      else if (action === 'alt') startGame();
+      else if (action === 'back') toMenu();
+    }
+    if (dirs.includes(action)) D.sfx('blip');
+  }
+
   // ----------------------------------------------------------- Teclado
+
+  const KEY_SHELL = { Enter: 'confirm', Space: 'confirm', NumpadEnter: 'confirm', Escape: 'back', Backspace: 'back', KeyD: 'alt', KeyR: 'alt', KeyP: 'start' };
 
   addEventListener('keydown', (e) => {
     if (Audio) Audio.init();
+    IS.device = 'keyboard';
     const code = e.code;
     if (PREVENT.has(code)) e.preventDefault();
     if (code === 'KeyM') {
       if (Audio) Audio.setMuted(!Audio.isMuted());
       return;
     }
-    const dir = DIR[code];
-    if (screen === 'menu') {
-      if (dir === 'left') sel = (sel + games.length - 1) % games.length;
-      else if (dir === 'right') sel = (sel + 1) % games.length;
-      else if (DIGIT[code] && +DIGIT[code] <= games.length) {
-        sel = +DIGIT[code] - 1;
-        screen = 'setup';
-      } else if (code === 'Enter' || code === 'Space') screen = 'setup';
-      if (dir) D.sfx('blip');
+    if (screen !== 'play') {
+      if (e.repeat && !DIR[code]) return;
+      if (DIGIT[code]) return shell('digit', +DIGIT[code]);
+      // En el reporte, D cambia de dificultad aunque también sea "derecha".
+      if (screen === 'report' && code === 'KeyD') return shell('alt');
+      if (screen === 'report' && code === 'KeyR') return shell('confirm');
+      if (screen === 'paused' && code === 'KeyR') return shell('alt');
+      if (screen === 'paused' && code === 'Escape') return shell('back');
+      if (DIR[code]) return shell(DIR[code]);
+      if (KEY_SHELL[code]) shell(KEY_SHELL[code]);
       return;
     }
-    if (screen === 'setup') {
-      if (dir === 'up') diffSel = Math.max(0, diffSel - 1);
-      else if (dir === 'down') diffSel = Math.min(2, diffSel + 1);
-      else if (DIGIT[code] && +DIGIT[code] <= 3) {
-        diffSel = +DIGIT[code] - 1;
-        startGame();
-      } else if (code === 'Enter' || code === 'Space') startGame();
-      else if (code === 'Escape' || code === 'Backspace') screen = 'menu';
-      if (dir) D.sfx('blip');
-      return;
-    }
-    if (screen === 'report') {
-      if (code === 'Enter' || code === 'KeyR' || code === 'Space') startGame();
-      else if (code === 'KeyD') screen = 'setup';
-      else if (code === 'Escape') toMenu();
-      return;
-    }
-    if (screen === 'paused') {
-      if (code === 'KeyP') screen = 'play';
-      else if (code === 'KeyR') startGame();
-      else if (code === 'Escape') toMenu();
-      return;
-    }
-    // Jugando.
-    if (code === 'KeyP') {
-      screen = 'paused';
-      held.clear();
-      if (Audio) Audio.setSiren(false);
-      return;
-    }
+    if (code === 'KeyP') return pause();
     if (e.repeat) return;
     held.add(code);
     if (NAMED[code]) pressed.push(NAMED[code]);
-    if (dir) pressed.push(dir);
+    if (DIR[code]) pressed.push(DIR[code]);
     if (DIGIT[code]) pressed.push(DIGIT[code]);
   });
 
@@ -169,6 +201,7 @@
 
   canvas.addEventListener('mousemove', (e) => {
     const p = D.toLogical(r, e.clientX, e.clientY);
+    if (Math.hypot(p.x - mouse.x, p.y - mouse.y) > 4) IS.device = 'keyboard';
     mouse.x = p.x;
     mouse.y = p.y;
     mouse.moved = true;
@@ -180,6 +213,7 @@
 
   canvas.addEventListener('mousedown', (e) => {
     if (Audio) Audio.init();
+    IS.device = 'keyboard';
     canvas.focus();
     const p = D.toLogical(r, e.clientX, e.clientY);
     mouse.down = true;
@@ -190,11 +224,14 @@
         screen = 'setup';
       }
     } else if (screen === 'setup') {
-      const i = S.diffCards().findIndex((c) => inside(p, c));
+      const compact = !!game().durations;
+      const i = S.diffCards(compact).findIndex((c) => inside(p, c));
+      const chip = compact ? S.durationChips(game().durations).findIndex((c) => inside(p, c)) : -1;
       if (i >= 0) {
         if (i === diffSel) startGame();
         else diffSel = i;
-      } else if (inside(p, S.playButton())) startGame();
+      } else if (chip >= 0) durSel[game().id] = chip;
+      else if (inside(p, S.playButton())) startGame();
     } else if (screen === 'play') {
       clicks.push(p);
     }
@@ -204,7 +241,34 @@
     mouse.down = false;
   });
 
-  function readInput() {
+  // ------------------------------------------------------------- Mando
+
+  function pollPad() {
+    const list = navigator.getGamepads ? navigator.getGamepads() : [];
+    const gp = Array.from(list || []).find((p) => p && p.connected);
+    if (!gp) {
+      padPrev = null;
+      IS.padType = null;
+      if (IS.device !== 'keyboard') IS.device = 'keyboard';
+      return null;
+    }
+    const cur = Pad.snapshot(gp);
+    const fresh = Pad.edges(padPrev, cur);
+    padPrev = cur;
+    IS.padType = cur.type;
+    if (fresh.length || Pad.active(cur)) {
+      IS.device = cur.type;
+      if (Audio && fresh.length) Audio.init();
+    }
+    return { cur, pressed: fresh };
+  }
+
+  addEventListener('gamepadconnected', (e) => {
+    IS.padType = Pad.detect(e.gamepad.id);
+    IS.device = IS.padType;
+  });
+
+  function readInput(pad) {
     let mx = 0;
     let my = 0;
     for (const code of held) {
@@ -215,7 +279,22 @@
     }
     mx = Math.sign(mx);
     my = Math.sign(my);
-    const input = { moveX: mx, moveY: my, adjust: mx, space: held.has('Space'), pressed, clicks, mouse: { ...mouse } };
+    const input = { moveX: mx, moveY: my, adjust: mx, space: held.has('Space'), pressed, clicks, mouse: { ...mouse }, pad: null };
+    if (pad) {
+      const c = pad.cur;
+      input.pad = { type: c.type, held: c.held, pressed: pad.pressed, lx: c.lx, ly: c.ly, rx: c.rx, ry: c.ry };
+      // Los juegos de mapa reciben el mando traducido a sus teclas; los "raw" lo leen directo.
+      if (!game().padRaw) {
+        const dx = (c.held.right ? 1 : 0) - (c.held.left ? 1 : 0);
+        const dy = (c.held.down ? 1 : 0) - (c.held.up ? 1 : 0);
+        input.moveX = Math.sign(input.moveX + dx + (c.lx ? Math.sign(c.lx) : 0));
+        input.moveY = Math.sign(input.moveY + dy + (c.ly ? Math.sign(c.ly) : 0));
+        input.adjust = input.moveX;
+        input.space = input.space || c.held.a;
+        input.mouse.down = input.mouse.down || c.held.a;
+        input.pressed = input.pressed.concat(Pad.toKeys(pad.pressed));
+      }
+    }
     pressed = [];
     clicks = [];
     mouse.moved = false;
@@ -229,8 +308,17 @@
     last = now;
     r.t += dt;
     const ctx = r.ctx;
+    const pad = pollPad();
+    if (pad && screen !== 'play') {
+      for (const a of Pad.toMenu(pad.pressed)) shell(a);
+      // El botón que arrancó el turno no cuenta como acción dentro del juego.
+      if (screen === 'play') pad.pressed = [];
+    }
     if (screen === 'play') {
-      inst.update(dt, readInput());
+      if (pad && pad.pressed.includes('start')) pause();
+    }
+    if (screen === 'play') {
+      inst.update(dt, readInput(pad));
       inst.draw(r);
       if (inst.over) finish();
     } else if (screen === 'paused') {
@@ -239,7 +327,7 @@
     } else {
       D.begin(r);
       if (screen === 'menu') S.drawMenu(ctx, r.t, games, sel, records);
-      else if (screen === 'setup') S.drawSetup(ctx, r.t, game(), diffSel, records);
+      else if (screen === 'setup') S.drawSetup(ctx, r.t, game(), diffSel, records, duration());
       else if (screen === 'report') S.drawReport(ctx, r.t, game(), diffId(), report, (records[game().id] || {})[diffId()], isRecord);
     }
     requestAnimationFrame(frame);
@@ -254,9 +342,10 @@
       return screen;
     },
     games,
-    play(id, diff = 'normal') {
+    play(id, diff = 'normal', dur = null) {
       sel = games.findIndex((g) => g.id === id);
       diffSel = D.DIFFICULTIES.findIndex((d) => d.id === diff);
+      if (dur && game().durations) durSel[id] = game().durations.indexOf(dur);
       startGame();
     },
   };
