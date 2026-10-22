@@ -272,10 +272,10 @@
 
   // Control según el dispositivo activo: tecla en teclado, botón(es) en el mando.
   // spec = { key: 'W / S', pad: 'dpadUD' | ['dpadUD', 'lstickV'] }. Dibuja desde x (izquierda); devuelve el ancho.
-  function control(ctx, spec, x, y, { size = 15, color = T.orange, device = InputState.device } = {}) {
+  function control(ctx, spec, x, y, { size = 15, color = T.orange, keyInk = '#140c09', device = InputState.device } = {}) {
     if (device === 'keyboard' || !spec.pad) {
       const w = keyWidth(ctx, spec.key, size);
-      keycap(ctx, spec.key, x + w / 2, y, { size, color });
+      keycap(ctx, spec.key, x + w / 2, y, { size, color, ink: keyInk });
       return w;
     }
     const list = Array.isArray(spec.pad) ? spec.pad : [spec.pad];
@@ -301,7 +301,7 @@
   }
 
   // Fila de ayudas "[control] acción" separadas; devuelve el ancho total.
-  function hints(ctx, items, x, y, { size = 15, gap = 26, color = T.orange, ink = T.ink, align = 'left' } = {}) {
+  function hints(ctx, items, x, y, { size = 15, gap = 26, color = T.orange, keyInk = '#140c09', ink = T.ink, align = 'left' } = {}) {
     const widths = items.map(([spec, label]) => {
       const cw = spec.key || spec.pad ? measureControl(ctx, spec, size) : 0;
       ctx.font = font(size + 1, 600);
@@ -310,7 +310,7 @@
     const total = widths.reduce((a, b) => a + b, 0) + gap * (items.length - 1);
     let cx = align === 'center' ? x - total / 2 : align === 'right' ? x - total : x;
     items.forEach(([spec, label], i) => {
-      const cw = control(ctx, spec, cx, y, { size, color });
+      const cw = control(ctx, spec, cx, y, { size, color, keyInk });
       text(ctx, label, cx + cw + 8, y + size * 0.38, { size: size + 1, weight: 600, color: ink });
       cx += widths[i] + gap;
     });
@@ -542,9 +542,34 @@
   }
 
   // "[E] operar" sobre la cabeza del jugador.
-  function prompt(ctx, p, label, color = T.orange) {
-    keycap(ctx, 'E', p.x, p.y - 44, { size: 15, color });
-    text(ctx, label, p.x, p.y - 62, { size: 13, weight: 700, color, align: 'center' });
+  // "[E] operar" (o el botón del mando) sobre la cabeza del jugador.
+  function prompt(ctx, p, label, color = T.orange, spec = { key: 'E', pad: 'x' }) {
+    const w = measureControl(ctx, spec, 15);
+    control(ctx, spec, p.x - w / 2, p.y - 44, { size: 15, color });
+    text(ctx, label, p.x, p.y - 64, { size: 13, weight: 700, color, align: 'center' });
+  }
+
+  // Cambia nombres de teclas en un texto por los botones del mando activo.
+  function keysText(str, device = InputState.device) {
+    if (device === 'keyboard' || !PF.Pad) return str;
+    const L = (n) => PF.Pad.label(device, n);
+    return str
+      .replace(/ESPACIO/g, L('a'))
+      .replace(/\bA\/D\b/g, 'la cruceta ◀▶')
+      .replace(/1-4/g, `${L('lb')} ${L('rb')} ${L('lt')} ${L('rt')}`)
+      .replace(/\b[Ff]lechas\b/g, 'la cruceta');
+  }
+
+  // Zona lateral reservada para mensajes (de `top` hasta encima del pie de controles).
+  function dockRect(top) {
+    return { x: VIEW.mapWidth + 16, y: top, w: VIEW.width - VIEW.mapWidth - 32, h: VIEW.height - 30 - top };
+  }
+
+  // Pie de la barra lateral con los controles del dispositivo activo.
+  function footer(ctx, items) {
+    ctx.fillStyle = T.edge;
+    ctx.fillRect(VIEW.mapWidth + 16, VIEW.height - 26, VIEW.width - VIEW.mapWidth - 32, 1);
+    hints(ctx, items, VIEW.mapWidth + (VIEW.width - VIEW.mapWidth) / 2, VIEW.height - 12, { size: 10, gap: 12, ink: T.dim, color: '#8a6a50', align: 'center' });
   }
 
   function formatTime(seconds) {
@@ -610,7 +635,7 @@
     return { x: x + 20, y: y + 60, w: W - 40, h: H - 74, outer: { x, y, w: W, h: H } };
   }
 
-  function modal(ctx, title, H, { W = 640, accent = T.orange, hint = 'E / Esc  salir' } = {}) {
+  function modal(ctx, title, H, { W = 640, accent = T.orange, hint = [[{ key: 'E / Esc', pad: 'b' }, 'salir']] } = {}) {
     const { x, y } = modalArea(H, W).outer;
     ctx.fillStyle = 'rgba(8,4,3,0.6)';
     ctx.fillRect(0, VIEW.hud, VIEW.mapWidth, VIEW.height - VIEW.hud);
@@ -620,33 +645,15 @@
     ctx.fill();
     ctx.fillRect(x, y + 30, W, 16);
     text(ctx, title, x + 20, y + 31, { size: 21, weight: 800, color: '#170e0a' });
-    if (hint) text(ctx, hint, x + W - 18, y + 30, { size: 13, weight: 700, color: '#170e0a', align: 'right' });
+    if (hint) hints(ctx, hint, x + W - 18, y + 24, { size: 12, align: 'right', ink: '#170e0a', color: '#170e0a', keyInk: accent });
     return modalArea(H, W);
   }
 
-  // Cartel grande temporal en el centro del mapa.
-  function banner(ctx, b) {
-    if (!b) return;
-    const k = b.life / b.max;
-    ctx.save();
-    ctx.globalAlpha = Math.min(1, k * 3);
-    const h = b.sub ? 96 : 70;
-    const y = 150;
-    ctx.fillStyle = 'rgba(10,5,3,0.82)';
-    ctx.fillRect(0, y, VIEW.mapWidth, h);
-    ctx.fillStyle = b.color;
-    ctx.fillRect(0, y, VIEW.mapWidth, 3);
-    ctx.fillRect(0, y + h - 3, VIEW.mapWidth, 3);
-    const s = 0.85 + 0.15 * Math.min(1, (1 - k) * 8);
-    ctx.translate(VIEW.mapWidth / 2, y + 48);
-    ctx.scale(s, s);
-    text(ctx, b.text, 0, 0, { size: 40, weight: 800, color: b.color, align: 'center' });
-    if (b.sub) text(ctx, b.sub, 0, 32, { size: 18, weight: 600, color: T.ink, align: 'center' });
-    ctx.restore();
-  }
-
+  // Aviso temporal para el panel de mensajes. Dura un poco más que su `life` nominal
+  // porque ya no tapa el juego.
   function makeBanner(text, color, sub = null, life = 2) {
-    return { text, color, sub, life, max: life };
+    const ttl = life * 1.8;
+    return { text, color, sub, life: ttl, max: ttl };
   }
 
   function tickBanner(owner, dt) {
@@ -787,8 +794,10 @@
     checkRow,
     modalArea,
     modal,
-    banner,
     makeBanner,
+    keysText,
+    dockRect,
+    footer,
     tickBanner,
     floatAdd,
     floatsUpdate,

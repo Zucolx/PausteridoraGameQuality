@@ -6,10 +6,18 @@ Cada juego tiene **tres dificultades** (Fácil, Normal y Difícil) y termina con
 **Reporte de Calidad** con rango S/A/B/C. Se juega con **teclado y ratón o con mando de
 PlayStation o Xbox**: los botones que se ven en pantalla cambian solos según el mando.
 
-Cuando el jugador se equivoca, sobre el operario aparece una **burbuja de pensamiento**
-que dice **"¡Esto no va así!"** y explica el porqué, por ejemplo *"El agua caliente para
-sanitizar debe estar a 85 °C. ¡Las bacterias sobrevivieron!"*. Esos errores se repiten
-al final en el reporte, en la sección "Lo que no va así".
+Cuando el jugador se equivoca aparece una **burbuja de pensamiento** que dice **"¡Esto
+no va así!"** y explica el porqué, por ejemplo *"El agua caliente para sanitizar debe
+estar a 85 °C. ¡Las bacterias sobrevivieron!"*. Esos errores se repiten al final en el
+reporte, en la sección "Lo que no va así".
+
+Para que no estorben, los mensajes van **a un lado**:
+
+- En los juegos de mapa, un panel **MENSAJES** en la barra lateral reúne los avisos del
+  turno, las fichas "Sabías que", las notificaciones de presión y la burbuja del
+  operario. Sobre el operario solo aparece una nubecita junto a la cabeza que indica
+  que hay un mensaje nuevo.
+- En Control de UP, una barra de mensajes entre el proceso y los paneles de control.
 
 | # | Juego | De qué va |
 |---|---|---|
@@ -60,10 +68,11 @@ vuelven a mostrar teclas. Cualquier otro mando se muestra con los botones de Xbo
 | Juegos de mapa: mover · operar · confirmar · manual | stick · □ · ✕ · △ | stick · X · A · Y |
 | Juegos de mapa: opciones 1-4 | L1 · R1 · L2 · R2 | LB · RB · LT · RT |
 
-En los juegos de mapa (Pasteurizadora, CIP Rush, Cazador y Línea en Paro) el mando
-funciona con esa traducción. Sus pantallas de inicio muestran los botones del mando,
-pero dentro del turno las ayudas siguen mostrando teclas. En Control de UP todo el
-panel está pensado para el mando.
+Las ayudas de todos los juegos cambian según el mando: las indicaciones sobre el
+operario, las ventanas de estación, los mini-juegos (por ejemplo, el patrón de colores
+usa L1 R1 L2 R2 / LB RB LT RT), las herramientas y el pie de controles de la barra
+lateral. En Línea en Paro, las notificaciones de presión se responden con L2 / LT
+("arrancar ya") o R2 / RT ("seguir el protocolo").
 
 ### Generar el exportable
 

@@ -90,7 +90,15 @@
       PF.Render.resetFx(r);
     }
     PF.Render.drawGame(r, s.g);
-    B.draw(r.ctx, s.bubble, s.g.player);
+    const ctx = r.ctx;
+    if (!s.g.player.operating) B.marker(ctx, s.bubble, s.g.player, r.t);
+    // Panel de mensajes bajo las alarmas: avisos del turno y la burbuja del operario.
+    const fb = r.fx.banner;
+    const notices = [
+      s.g.lineStopped && { text: 'LÍNEA PARADA', sub: 'Cerraste la válvula al mínimo: penalización y purga al rearrancar.', color: T.red },
+      fb && { text: fb.str, color: fb.color, life: fb.life, max: fb.max },
+    ];
+    B.dock(ctx, D.dockRect(546), { bubble: s.bubble, notices, t: r.t });
   }
 
   function report(s) {

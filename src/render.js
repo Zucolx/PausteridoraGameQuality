@@ -138,7 +138,8 @@
   }
 
   function banner(r, str, color, life = 1.8) {
-    r.fx.banner = { str, color, life, max: life };
+    const ttl = life * 1.8;
+    r.fx.banner = { str, color, life: ttl, max: ttl };
   }
 
   function onSignal(r, s) {
@@ -585,13 +586,7 @@
     if (!id) return;
     const ctx = r.ctx;
     const blocked = Sim.isBlocked(g, id);
-    const x = p.x;
-    const y = p.y - 44;
-    ctx.fillStyle = blocked ? COL.red : COL.gold;
-    roundRect(ctx, x - 13, y - 13, 26, 26, 5);
-    ctx.fill();
-    text(ctx, 'E', x, y + 6, { size: 18, weight: 800, color: '#111', align: 'center' });
-    text(ctx, blocked ? 'bloqueada' : 'operar', x, y - 18, { size: 12, color: blocked ? COL.red : COL.gold, align: 'center' });
+    PF.Draw.prompt(ctx, p, blocked ? 'bloqueada' : 'operar', blocked ? COL.red : COL.gold);
   }
 
   function drawFloats(r) {
@@ -644,8 +639,6 @@
     if (g.lineStopped) {
       ctx.fillStyle = 'rgba(0,0,0,0.35)';
       ctx.fillRect(0, V.hud, V.mapWidth, V.height - V.hud);
-      text(ctx, 'LÍNEA PARADA', 480, 300, { size: 40, weight: 800, color: COL.red, align: 'center' });
-      text(ctx, 'Cerraste la válvula al mínimo: penalización y purga al rearrancar', 480, 330, { size: 16, color: COL.text, align: 'center' });
     }
     ctx.restore();
   }
@@ -694,8 +687,10 @@
     const ph = Sim.phase(g);
     text(ctx, 'FASE', 960, 24, { size: 12, color: COL.dim, weight: 700 });
     text(ctx, ph.label, 960, 50, { size: 22, color: ph.peak ? COL.red : COL.text, weight: 700 });
-    text(ctx, PF.Audio && PF.Audio.isMuted() ? 'M: sonido OFF' : 'M: sonido', 1262, 24, { size: 12, color: COL.faint, align: 'right' });
-    text(ctx, 'P: pausa', 1262, 44, { size: 12, color: COL.faint, align: 'right' });
+    PF.Draw.hints(ctx, [[{ key: 'P', pad: 'start' }, 'pausa']], 1266, 22, { size: 11, align: 'right', ink: COL.faint, color: '#55616e' });
+    if (PF.Draw.InputState.device === 'keyboard') {
+      PF.Draw.hints(ctx, [[{ key: 'M' }, PF.Audio && PF.Audio.isMuted() ? 'sonido OFF' : 'sonido']], 1266, 46, { size: 11, align: 'right', ink: COL.faint, color: '#55616e' });
+    }
   }
 
   // Barra de medición: rango visible, zona aceptable, banda ideal y aguja.
@@ -752,13 +747,12 @@
       text(ctx, note, x0 + 20, y + 58, { size: 12, color: d.lying ? '#c38bff' : discarding ? COL.red : COL.faint, weight: 600 });
     });
 
-    text(ctx, 'ALARMAS', x0 + 20, 332, { size: 13, weight: 700, color: COL.dim });
-    text(ctx, String(alarms.length), x0 + 300, 332, { size: 13, weight: 700, color: alarms.length ? COL.warn : COL.faint, align: 'right' });
+    text(ctx, `ALARMAS (${alarms.length})`, x0 + 20, 332, { size: 13, weight: 700, color: alarms.length ? COL.warn : COL.dim });
     if (!alarms.length) {
       text(ctx, 'Sin alarmas. La línea respira…', x0 + 20, 362, { size: 14, color: COL.faint });
     }
     const blink = Math.floor(r.t * 5) % 2 === 0;
-    alarms.slice(0, 5).forEach((a, i) => {
+    alarms.slice(0, 3).forEach((a, i) => {
       const y = 344 + i * 66;
       const col = severityColor(a.severity);
       ctx.globalAlpha = a.blink && !blink ? 0.45 : 1;
@@ -771,7 +765,7 @@
       const blocked = Sim.isBlocked(g, a.station);
       text(ctx, '→ ' + stationShortName(a.station) + (blocked ? ' · BLOQUEADA' : ''), x0 + 298, y + 20, { size: 12, weight: 700, color: blocked ? COL.red : COL.text, align: 'right' });
       ctx.font = font(13, 500);
-      const hint = wrap(ctx, a.hint, 268)[0];
+      const hint = wrap(ctx, PF.Draw.keysText(a.hint), 268)[0];
       text(ctx, hint, x0 + 30, y + 42, { size: 13, weight: 500, color: COL.dim });
       if (a.event && a.event.kind === 'adjust' && a.event.settle > 0) {
         ctx.fillStyle = COL.ok;
@@ -785,8 +779,13 @@
       }
       ctx.globalAlpha = 1;
     });
-    if (alarms.length > 5) text(ctx, `+${alarms.length - 5} más`, x0 + 298, 680, { size: 12, color: COL.dim, align: 'right' });
-    text(ctx, 'WASD mover · E operar · A/D ajustar · ESPACIO reparar', x0 + 160, 708, { size: 11, color: COL.faint, align: 'center' });
+    if (alarms.length > 3) text(ctx, `+${alarms.length - 3} alarmas más`, x0 + 306, 332, { size: 12, color: COL.warn, align: 'right' });
+    PF.Draw.footer(ctx, [
+      [{ key: 'WASD', pad: 'lstick' }, 'mover'],
+      [{ key: 'E', pad: 'x' }, 'operar'],
+      [{ key: 'A / D', pad: 'dpadLR' }, 'ajustar'],
+      [{ key: 'ESPACIO', pad: 'a' }, 'reparar'],
+    ]);
   }
 
   // ------------------------------------------------- Panel de estación
@@ -816,7 +815,7 @@
     ctx.stroke();
 
     text(ctx, st.name.toUpperCase(), x + 24, y + 34, { size: 22, weight: 700 });
-    text(ctx, 'E / Esc  salir', x + W - 24, y + 32, { size: 13, color: COL.dim, align: 'right' });
+    PF.Draw.hints(ctx, [[{ key: 'E / Esc', pad: 'b' }, 'salir']], x + W - 24, y + 27, { size: 12, align: 'right', ink: COL.dim, color: COL.gold });
 
     // Medidor principal.
     const d = Sim.display(g, key);
@@ -839,12 +838,17 @@
       line = 'SENSOR LOCO: la lectura miente. Calibra antes de fiarte.';
       lineColor = '#c38bff';
     } else if (status === 'low' || status === 'high') {
-      line = `${cfg[status].cause.toUpperCase()}: ${cfg[status].effect}. ◀ A · D ▶ para corregir`;
+      line = `${cfg[status].cause.toUpperCase()}: ${cfg[status].effect}. Corrige:`;
       lineColor = COL.red;
     } else {
-      line = '◀ A · D ▶ ajustar   ·   mantén la aguja en la banda verde clara';
+      line = 'Mantén la aguja en la banda verde clara:';
     }
     text(ctx, line, x + 24, y + 156, { size: 14, weight: 600, color: lineColor });
+    if (!stuck && !d.lying) {
+      ctx.font = font(14, 600);
+      const lw = ctx.measureText(line).width;
+      PF.Draw.hints(ctx, [[{ key: 'A / D', pad: 'dpadLR' }, 'ajustar']], x + 34 + lw, y + 151, { size: 12, ink: lineColor, color: COL.gold });
+    }
 
     // Derivas en esta estación.
     const drift = events.find((e) => e.kind === 'adjust');
@@ -882,12 +886,13 @@
     ctx.lineWidth = 2;
     ctx.stroke();
     text(ctx, ev.name.toUpperCase(), x + 14, y + 24, { size: 15, weight: 700, color: COL.warn });
-    text(ctx, ev.hint, x + w - 14, y + 24, { size: 13, color: COL.text, align: 'right' });
+    text(ctx, PF.Draw.keysText(ev.hint), x + w - 14, y + 24, { size: 13, color: COL.text, align: 'right' });
     const cx = x + w / 2;
     const ratio = PF.Minigames[mg.type].ratio(mg);
 
     if (mg.type === 'hold') {
-      text(ctx, mg.active ? 'ENFRIANDO…' : 'Mantén ESPACIO', cx, y + 60, { size: 22, weight: 800, color: mg.active ? '#7fd3ff' : COL.text, align: 'center' });
+      if (mg.active) text(ctx, 'ENFRIANDO…', cx, y + 60, { size: 22, weight: 800, color: '#7fd3ff', align: 'center' });
+      else PF.Draw.hints(ctx, [[{ key: 'ESPACIO', pad: 'a' }, 'mantén para enfriar']], cx, y + 54, { size: 15, align: 'center', ink: COL.text, color: '#7fd3ff' });
       progressBar(ctx, x + 40, y + 78, w - 80, 20, ratio, '#7fd3ff');
       if (mg.active) {
         for (let i = 0; i < 6; i++) {
@@ -914,7 +919,8 @@
         }
         text(ctx, ARROW_GLYPH[dir], bx + size / 2, y + 42 + size / 2 + 11, { size: 32, weight: 800, color: done ? COL.ok : cur ? COL.gold : COL.dim, align: 'center' });
       });
-      text(ctx, mg.flash > 0 ? '¡Atascó! Secuencia nueva' : 'Flechas o WASD', cx, y + 114, { size: 13, color: mg.flash > 0 ? COL.red : COL.dim, align: 'center' });
+      if (mg.flash > 0) text(ctx, '¡Atascó! Secuencia nueva', cx, y + 114, { size: 13, color: COL.red, align: 'center' });
+      else PF.Draw.hints(ctx, [[{ key: 'Flechas', pad: 'dpad' }, 'repite la secuencia']], cx, y + 110, { size: 11, align: 'center', ink: COL.dim, color: COL.gold });
     } else if (mg.type === 'pressure') {
       const gx = x + 40;
       const gw = w - 220;
@@ -928,7 +934,7 @@
       ctx.fillStyle = inZone ? COL.ok : COL.warn;
       ctx.fillRect(gx + mg.p * gw - 3, gy - 6, 6, 38);
       text(ctx, 'PRESIÓN', gx, gy + 48, { size: 12, color: COL.dim });
-      text(ctx, 'ESPACIO sube · suelta para bajar', gx + gw, gy + 48, { size: 12, color: COL.dim, align: 'right' });
+      PF.Draw.hints(ctx, [[{ key: 'ESPACIO', pad: 'a' }, 'sube · suelta para bajar']], gx + gw, gy + 44, { size: 11, align: 'right', ink: COL.dim, color: COL.gold });
       // Progreso de purga como anillo.
       const rx = x + w - 80;
       const ry = y + 76;
@@ -960,6 +966,7 @@
         ctx.fill();
       }
       text(ctx, 'ANTIESPUMANTE', gx, y + 110, { size: 12, color: COL.dim });
+      PF.Draw.hints(ctx, [[{ key: 'ESPACIO', pad: 'a' }, 'cuando la aguja esté en la zona']], gx + gw, y + 106, { size: 11, align: 'right', ink: COL.dim, color: COL.gold });
     } else if (mg.type === 'simon') {
       const size = 56;
       const gap = 18;
@@ -972,9 +979,12 @@
         roundRect(ctx, bx, y + 36, size, size, 10);
         ctx.fill();
         ctx.globalAlpha = 1;
-        text(ctx, String(i + 1), bx + size / 2, y + 36 + size / 2 + 9, { size: 26, weight: 800, color: lit ? '#111' : '#ddd', align: 'center' });
+        // Teclado: 1-4. Mando: L1 R1 L2 R2 (LB RB LT RT).
+        const device = PF.Draw.InputState.device;
+        if (device === 'keyboard') text(ctx, String(i + 1), bx + size / 2, y + 36 + size / 2 + 9, { size: 26, weight: 800, color: lit ? '#111' : '#ddd', align: 'center' });
+        else PF.Draw.padGlyph(ctx, device, ['lb', 'rb', 'lt', 'rt'][i], bx + size / 2, y + 36 + size / 2, 15);
       }
-      const msg = mg.flash > 0 ? '¡Error! Mira el patrón de nuevo' : mg.phase === 'show' ? 'Memoriza el patrón…' : `Repite con 1-4  (${mg.idx}/${mg.seq.length})`;
+      const msg = mg.flash > 0 ? '¡Error! Mira el patrón de nuevo' : mg.phase === 'show' ? 'Memoriza el patrón…' : `Repite el patrón con los botones  (${mg.idx}/${mg.seq.length})`;
       text(ctx, msg, cx, y + 114, { size: 13, color: mg.flash > 0 ? COL.red : COL.dim, align: 'center' });
     }
   }
@@ -990,29 +1000,12 @@
     }
   }
 
-  function drawBanner(r) {
-    const b = r.fx.banner;
-    if (!b) return;
-    const ctx = r.ctx;
-    const k = b.life / b.max;
-    const appear = Math.min(1, (1 - k) * 8);
-    ctx.globalAlpha = Math.min(1, k * 3);
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillRect(0, 150, V.mapWidth, 70);
-    ctx.save();
-    ctx.translate(V.mapWidth / 2, 198);
-    ctx.scale(0.8 + 0.2 * appear, 0.8 + 0.2 * appear);
-    text(ctx, b.str, 0, 0, { size: 44, weight: 800, color: b.color, align: 'center' });
-    ctx.restore();
-    ctx.globalAlpha = 1;
-  }
-
+  // Los avisos grandes (r.fx.banner) los dibuja el panel de mensajes, no el mapa.
   function drawGame(r, g) {
     PF.Draw.begin(r);
     const alarms = Sim.alarms(g);
     drawMap(r, g, alarms);
     drawStationPanel(r, g);
-    drawBanner(r);
     drawTopBar(r, g);
     drawSidebar(r, g, alarms);
   }

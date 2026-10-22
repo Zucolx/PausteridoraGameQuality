@@ -64,17 +64,18 @@
   ];
 
   // Distribución en pantalla (1280 × 720, sin barra lateral).
-  const TUN = { x: 170, y: 140, w: 600, h: 160 };
-  const BASE_Y = 262;
-  const VALVE = { x: 880, y: 230 };
-  const FILL = { x: 966, y: 84, w: 296, h: 124 };
-  const DRAIN = { x: 966, y: 254, w: 296, h: 124 };
+  const TUN = { x: 170, y: 92, w: 600, h: 156 };
+  const BASE_Y = 230;
+  const VALVE = { x: 880, y: 198 };
+  const FILL = { x: 966, y: 80, w: 296, h: 110 };
+  const DRAIN = { x: 966, y: 206, w: 296, h: 110 };
+  // Barra de mensajes entre el proceso y los paneles: nunca tapa los controles.
+  const MSG = { x: 8, y: 328, w: 1264, h: 66 };
   const PANELS = {
     temp: { x: 16, y: 400, w: 392, h: 312 },
     pu: { x: 420, y: 400, w: 440, h: 312 },
     valve: { x: 872, y: 400, w: 392, h: 312 },
   };
-  const BOUNDS = { left: 8, right: 1272, top: 72, bottom: 712 };
 
   // Controles: tecla y botón del mando para cada acción (se muestran según el dispositivo).
   const CTRL = {
@@ -244,7 +245,8 @@
   function startEvent(s) {
     const pool = EVENTS.filter((e) => !e.speed || s.cfg.speed);
     const def = pool[Math.floor(s.rng() * pool.length)];
-    const e = { def, left: between(s.rng, def.dur), offset: 0 };
+    const left = between(s.rng, def.dur);
+    const e = { def, left, total: left, offset: 0 };
     if (def.offset) e.offset = between(s.rng, def.offset) * s.cfg.mag;
     if (def.minutes) s.minutes = Math.round(between(s.rng, def.minutes));
     s.event = e;
@@ -344,7 +346,6 @@
       `A ${fmt(s.temp)} °C cada minuto suma ${fmt(r, 2)} UP → ${s.minutes} min × ${fmt(r, 2)} = ${fmt(proj)} UP. ${st === 'sub' ? 'Sube' : 'Baja'} la temperatura hacia ${fmt(tempFor(LIMITS.ideal, s.minutes))} °C.`,
       { kind: 'tip', life: 5 }
     );
-    s.bubble.cur.anchor = 'temp';
   }
 
   // ------------------------------------------------------------- Dibujo
@@ -360,9 +361,15 @@
     drawPuPanel(s, ctx);
     drawValvePanel(s, ctx, t);
     D.floatsDraw(ctx, s.floats);
-    D.banner(ctx, s.banner);
-    const anchor = s.bubble.cur && s.bubble.cur.anchor === 'temp' ? { x: 210, y: 470 } : VALVE;
-    B.draw(ctx, s.bubble, anchor, BOUNDS);
+    const e = s.event;
+    const eventNotice = e && {
+      text: `⚠ ${e.def.name}${e.def.speed ? ` · t = ${s.minutes} min` : ''}`,
+      sub: e.def.hint,
+      color: T.warn,
+      life: e.left,
+      max: e.total,
+    };
+    B.bar(ctx, MSG, { bubble: s.bubble, notices: [eventNotice, s.banner], t });
     D.hud(ctx, t, {
       title: 'CONTROL DE UP',
       diff: s.diff,
@@ -379,7 +386,7 @@
   }
 
   function drawProcess(s, ctx, t) {
-    D.panel(ctx, 8, 72, 1264, 320, { fill: '#120b08', edge: '#2e1d13', radius: 12 });
+    D.panel(ctx, 8, 72, 1264, MSG.y - 78, { fill: '#120b08', edge: '#2e1d13', radius: 12 });
     // Cinta.
     ctx.fillStyle = '#2b2320';
     ctx.fillRect(16, BASE_Y + 2, VALVE.x - 30, 12);
@@ -412,16 +419,15 @@
     D.text(ctx, 'TÚNEL DE PASTEURIZACIÓN', TUN.x + 14, TUN.y + 24, { size: 15, weight: 800, color: '#ffcf9a' });
     D.text(ctx, `T real ${fmt(s.temp)} °C · t = ${s.minutes} min dentro`, TUN.x + TUN.w - 14, TUN.y + 24, { size: 15, weight: 700, color: '#ffcf9a', align: 'right', family: D.MONO });
 
-    // Perturbación activa.
+    // Perturbación activa: el túnel parpadea en ámbar (el detalle va en la barra de mensajes).
     if (s.event) {
-      const e = s.event.def;
-      const pulse = 0.6 + 0.4 * Math.sin(t * 8);
       ctx.save();
-      ctx.globalAlpha = 0.85 + 0.15 * pulse;
-      D.panel(ctx, TUN.x + 70, 80, TUN.w - 140, 50, { fill: '#3a1a0c', edge: T.warn, radius: 10 });
+      ctx.strokeStyle = T.warn;
+      ctx.globalAlpha = 0.4 + 0.4 * Math.sin(t * 8);
+      ctx.lineWidth = 4;
+      D.roundRect(ctx, TUN.x - 4, TUN.y - 4, TUN.w + 8, TUN.h + 8, 14);
+      ctx.stroke();
       ctx.restore();
-      D.text(ctx, `⚠ ${e.name}${e.speed ? ` · t = ${s.minutes} min` : ''}`, TUN.x + TUN.w / 2, 100, { size: 17, weight: 800, color: T.warn, align: 'center' });
-      D.text(ctx, e.hint, TUN.x + TUN.w / 2, 120, { size: 14, weight: 600, color: T.ink, align: 'center' });
     }
 
     // Salida, llave de paso y tanques.
@@ -768,7 +774,7 @@
       const on = s.valve === o.v;
       const flash = s.flash[o.v] > 0;
       D.panel(ctx, rc.x + 14, o.y, 236, 48, { fill: on ? o.color : '#1e130e', edge: on ? o.color : '#3d2619', radius: 10, glow: on || flash ? o.color : null });
-      const w = D.control(ctx, o.ctrl, rc.x + 26, o.y + 24, { size: 15, color: on ? '#170e0a' : o.color });
+      const w = D.control(ctx, o.ctrl, rc.x + 26, o.y + 24, { size: 15, color: on ? '#170e0a' : o.color, keyInk: on ? o.color : '#140c09' });
       D.text(ctx, o.label, rc.x + 34 + w, o.y + 31, { size: 20, weight: 800, color: on ? '#170e0a' : o.color });
       if (on) D.text(ctx, 'ABIERTA', rc.x + 240, o.y + 30, { size: 12, weight: 800, color: '#170e0a', align: 'right' });
     }

@@ -415,9 +415,8 @@
     if (near && !s.operating) D.prompt(ctx, s.player, near.name.toLowerCase());
     D.floatsDraw(ctx, s.floats);
     if (s.operating) MODAL[s.operating](s, ctx, t);
-    D.banner(ctx, s.banner);
     if (s.book) drawBook(s, ctx);
-    B.draw(ctx, s.bubble, s.player, s.operating ? { maxBottom: D.modalArea(H[s.operating]).outer.y - 6 } : {});
+    if (!s.operating && !s.book) B.marker(ctx, s.bubble, s.player, t);
     ctx.restore();
 
     D.hud(ctx, t, {
@@ -431,7 +430,7 @@
         { label: 'Errores', value: s.stats.errors, color: s.stats.errors ? T.red : T.ink, width: 120 },
       ],
     });
-    drawSidebar(s, ctx);
+    drawSidebar(s, ctx, t);
   }
 
   function drawPipes(s, ctx, t) {
@@ -579,7 +578,7 @@
         D.roundRect(ctx, rc.x + 8, rc.y + 50 + wave, rc.w - 16, rc.h - 58 - wave, 10);
         ctx.fill();
         ctx.globalAlpha = 1;
-        D.keycap(ctx, String(i + 1), rc.x + 22, rc.y + 22, { size: 14, color: sel ? ACCENT : '#6e5a48' });
+        D.control(ctx, { key: String(i + 1), pad: ['lb', 'rb', 'lt', 'rt'][i] }, rc.x + 8, rc.y + 22, { size: 13, color: sel ? ACCENT : '#6e5a48' });
         ctx.font = D.font(16, 700);
         D.wrap(ctx, c.name, rc.w).forEach((l, j) => D.text(ctx, l, rc.x + rc.w / 2, rc.y + rc.h + 20 + j * 18, { size: 16, weight: 700, align: 'center', color: sel ? T.ink : T.dim }));
         const sub = [c.brand, s.cfg.showKind ? c.kind : ''].filter(Boolean).join(' · ');
@@ -602,8 +601,18 @@
       D.roundRect(ctx, inlet.x - 40, inlet.y - 14, 140, 28, 6);
       ctx.fill();
       D.text(ctx, 'LÍNEA CIP', inlet.x + 30, inlet.y + 5, { size: 14, weight: 800, align: 'center', color: T.ink });
-      const hint = s.task.chemical ? '✔ Químico conectado. Ve al PANEL CIP.' : '← → elegir · ESPACIO conectar · 1-4 o clic';
-      D.text(ctx, hint, a.x + a.w, a.y + 4, { size: 14, weight: 700, color: s.task.chemical ? T.ok : T.dim, align: 'right' });
+      if (s.task.chemical) D.text(ctx, '✔ Químico conectado. Ve al PANEL CIP.', a.x + a.w, a.y + 4, { size: 14, weight: 700, color: T.ok, align: 'right' });
+      else
+        D.hints(
+          ctx,
+          [
+            [{ key: '← →', pad: 'dpadLR' }, 'elegir'],
+            [{ key: 'ESPACIO', pad: 'a' }, 'conectar'],
+          ],
+          a.x + a.w,
+          a.y - 2,
+          { size: 12, gap: 16, align: 'right', ink: T.dim }
+        );
     },
 
     panel(s, ctx) {
@@ -662,8 +671,19 @@
         ctx.fillStyle = s.ui.flash > 0 ? T.red : ACCENT;
         D.roundRect(ctx, a.x, by, a.w, 44, 8);
         ctx.fill();
-        D.text(ctx, '▶  INICIAR CIP   [ESPACIO]', a.x + a.w / 2, by + 29, { size: 20, weight: 800, color: '#170e0a', align: 'center' });
-        D.text(ctx, '↑↓ parámetro · ← → ajustar (mantén para ir rápido) · TAB CIP Master Plan', a.x + a.w / 2, by + 64, { size: 13, color: T.dim, align: 'center' });
+        D.text(ctx, '▶  INICIAR CIP', a.x + a.w / 2 - 20, by + 29, { size: 20, weight: 800, color: '#170e0a', align: 'center' });
+        D.control(ctx, { key: 'ESPACIO', pad: 'a' }, a.x + a.w / 2 + 70, by + 22, { size: 14, color: '#170e0a', keyInk: ACCENT });
+        D.hints(
+          ctx,
+          [
+            [{ key: '↑ ↓', pad: 'dpadUD' }, 'parámetro'],
+            [{ key: '← →', pad: 'dpadLR' }, 'ajustar (mantén)'],
+            [{ key: 'TAB', pad: 'y' }, 'CIP Master Plan'],
+          ],
+          a.x + a.w / 2,
+          by + 64,
+          { size: 12, gap: 18, align: 'center', ink: T.dim }
+        );
       } else {
         const done = k.cip === 'done';
         D.text(ctx, done ? '✔ CIP TERMINADO' : 'CIP EN CURSO…  ve a la LLENADORA mientras tanto', a.x, by + 20, { size: 17, weight: 800, color: done ? T.ok : T.warn });
@@ -737,7 +757,16 @@
       }
       ctx.restore();
       D.progressBar(ctx, a.x, area.y + area.h + 12, a.w, 10, 1 - left, T.ok);
-      D.text(ctx, 'WASD / ratón: mover el cepillo · mantén ESPACIO o clic: frotar', a.x + a.w / 2, area.y + area.h + 40, { size: 13, color: T.dim, align: 'center' });
+      D.hints(
+        ctx,
+        [
+          [{ key: 'WASD / ratón', pad: 'lstick' }, 'mover el cepillo'],
+          [{ key: 'ESPACIO', pad: 'a' }, 'mantén para frotar'],
+        ],
+        a.x + a.w / 2,
+        area.y + area.h + 40,
+        { size: 12, align: 'center', ink: T.dim }
+      );
     },
 
     verify(s, ctx) {
@@ -771,8 +800,16 @@
       ctx.fill();
       if (sw.phase === 'swab') {
         const want = sw.last === 'left' ? 'right' : sw.last === 'right' ? 'left' : null;
-        D.keycap(ctx, '←', sx + 100, sy + 200, { size: 22, color: want === 'left' || !want ? ACCENT : '#5a4030' });
-        D.keycap(ctx, '→', sx + 200, sy + 200, { size: 22, color: want === 'right' || !want ? ACCENT : '#5a4030' });
+        for (const [dir, cx] of [
+          ['left', sx + 100],
+          ['right', sx + 200],
+        ]) {
+          const on = want === dir || !want;
+          ctx.globalAlpha = on ? 1 : 0.35;
+          const spec = { key: dir === 'left' ? '←' : '→', pad: dir };
+          D.control(ctx, spec, cx - 18, sy + 200, { size: 22, color: on ? ACCENT : '#5a4030' });
+          ctx.globalAlpha = 1;
+        }
         D.text(ctx, `Zigzag ${sw.strokes}/${n}`, sx + 150, sy + 242, { size: 14, color: s.ui.flash > 0 ? T.red : T.dim, align: 'center' });
       }
       // Luminómetro.
@@ -835,46 +872,42 @@
       const cells = [cl.label, M.chemLabel(cl.chemical), `${v.time} min`, `${M.fmtNum(v.action, 1)} m/s`, `${M.fmtNum(v.conc, 1)} %`, `${v.temp} °C`];
       cells.forEach((c, j) => D.text(ctx, c, x + 24 + cols[j][1], ry, { size: j < 2 ? 15 : 17, weight: 700, color: '#2a170d', family: j < 2 ? D.FONT : D.MONO }));
     });
-    D.text(ctx, 'TAB cerrar · el reloj sigue corriendo', x + w / 2, y + h - 18, { size: 14, weight: 700, color: '#7a5030', align: 'center' });
+    D.hints(ctx, [[{ key: 'TAB', pad: 'y' }, 'cerrar · el reloj sigue corriendo']], x + w / 2, y + h - 22, { size: 13, align: 'center', ink: '#7a5030', color: '#c4501a' });
   }
 
-  function drawSidebar(s, ctx) {
+  function drawSidebar(s, ctx, t) {
     D.sidebar(ctx, 'ORDEN DE LIMPIEZA');
     const x = D.VIEW.mapWidth + 18;
-    D.panel(ctx, x - 4, 104, 290, 104, { fill: '#2a170d', edge: ACCENT, radius: 8 });
-    D.text(ctx, s.order.stop, x + 8, 128, { size: 14, weight: 600, color: T.dim });
-    D.text(ctx, s.order.program, x + 8, 154, { size: 22, weight: 800, color: ACCENT });
-    D.text(ctx, s.cleaning.label, x + 8, 184, { size: 17, weight: 700, color: T.ink });
+    D.panel(ctx, x - 4, 100, 290, 76, { fill: '#2a170d', edge: ACCENT, radius: 8 });
+    D.text(ctx, s.order.stop, x + 8, 118, { size: 13, weight: 600, color: T.dim });
+    D.text(ctx, s.order.program, x + 8, 143, { size: 20, weight: 800, color: ACCENT });
+    D.text(ctx, s.cleaning.label, x + 8, 166, { size: 15, weight: 700, color: T.ink });
 
-    D.text(ctx, 'TARJETA DE VERIFICACIÓN', x, 240, { size: 13, weight: 700, color: T.dim });
-    D.text(ctx, 'punto 8', x + 282, 240, { size: 11, color: T.faint, align: 'right' });
+    D.text(ctx, 'TARJETA DE VERIFICACIÓN', x, 198, { size: 13, weight: 700, color: T.dim });
+    D.text(ctx, 'punto 8', x + 282, 198, { size: 11, color: T.faint, align: 'right' });
     const next = nextStep(s);
     STEPS.forEach((st, i) => {
       let state = stepState(s, st.key);
       if (state === 'todo' && next && next.key === st.key) state = 'next';
-      D.checkRow(ctx, x - 4, 252 + i * 42, `${i + 1}. ${st.label}`, state, { width: 290 });
+      D.checkRow(ctx, x - 4, 206 + i * 38, `${i + 1}. ${st.label}`, state, { width: 290 });
     });
     const k = s.task;
-    let y = 430;
     if (k.cip !== 'idle') {
-      D.text(ctx, k.cip === 'done' ? 'CIP terminado' : 'CIP en curso', x, y, { size: 14, weight: 700, color: k.cip === 'done' ? T.ok : T.warn });
-      D.progressBar(ctx, x, y + 8, 286, 10, k.cip === 'done' ? 1 : k.cipT / s.cfg.cipTime, k.cip === 'done' ? T.ok : T.warn);
+      D.text(ctx, k.cip === 'done' ? 'CIP terminado' : 'CIP en curso', x, 374, { size: 13, weight: 700, color: k.cip === 'done' ? T.ok : T.warn });
+      D.progressBar(ctx, x + 100, 366, 186, 9, k.cip === 'done' ? 1 : k.cipT / s.cfg.cipTime, k.cip === 'done' ? T.ok : T.warn);
     }
-    if (s.stats.atp.length) D.text(ctx, `Últimas lecturas ATP: ${s.stats.atp.slice(-3).join(' · ')} URL`, x, y + 44, { size: 13, color: T.dim });
+    if (s.stats.atp.length) D.text(ctx, `ATP: ${s.stats.atp.slice(-3).join(' · ')} URL`, x, 396, { size: 13, color: T.dim });
+    // Inventario del afiche (puntos 4, 6 y 8).
+    const w = D.control(ctx, { key: 'TAB', pad: 'y' }, x, 424, { size: 12 });
+    D.text(ctx, 'CIP Master Plan', x + w + 8, 429, { size: 14, weight: 700 });
+    D.text(ctx, 'Afiche: p. 4 manual · p. 6 luminómetro · p. 8 tarjeta', x, 450, { size: 11, color: T.faint });
 
-    D.text(ctx, 'INVENTARIO', x, 520, { size: 13, weight: 700, color: T.dim });
-    const inv = [
-      ['TAB', 'CIP Master Plan', 'punto 4'],
-      ['ATP', 'Luminómetro', 'punto 6'],
-      ['✔', 'Tarjeta de verificación', 'punto 8'],
-    ];
-    inv.forEach(([k2, name, pt], i) => {
-      const iy = 548 + i * 34;
-      D.keycap(ctx, k2, x + 22, iy, { size: 12, color: i === 0 ? ACCENT : '#6e5a48' });
-      D.text(ctx, name, x + 52, iy + 5, { size: 15, weight: 600 });
-      D.text(ctx, pt, x + 286, iy + 5, { size: 11, color: T.faint, align: 'right' });
-    });
-    D.text(ctx, 'WASD mover · E operar · TAB manual', x + 143, 706, { size: 12, color: T.faint, align: 'center' });
+    B.dock(ctx, D.dockRect(462), { bubble: s.bubble, notices: [s.banner], t });
+    D.footer(ctx, [
+      [{ key: 'WASD', pad: 'lstick' }, 'mover'],
+      [{ key: 'E', pad: 'x' }, 'operar'],
+      [{ key: 'TAB', pad: 'y' }, 'manual'],
+    ]);
   }
 
   // ------------------------------------------------------------ Reporte

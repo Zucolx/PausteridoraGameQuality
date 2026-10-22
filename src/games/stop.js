@@ -160,14 +160,16 @@
   // Notificaciones de presión ("saboteadores").
   function updateToast(s, dt, input) {
     const P = input.pressed;
+    const pp = (input.pad && input.pad.pressed) || [];
     if (s.toast) {
       s.toast.life -= dt;
-      if (P.includes('y')) {
+      // Teclado: Y / X. Mando: L2-LT / R2-RT (no chocan con los botones del resto del juego).
+      if (P.includes('y') || pp.includes('lt')) {
         s.toast = null;
         startLine(s, true);
         return;
       }
-      if (P.includes('x') || s.toast.life <= 0) {
+      if (P.includes('x') || pp.includes('rt') || s.toast.life <= 0) {
         s.toast = null;
         s.stats.resisted++;
         D.floatAdd(s.floats, s.player.x, s.player.y - 60, 'Presión resistida', T.ok, 15);
@@ -296,9 +298,7 @@
     D.floatsDraw(ctx, s.floats);
     if (s.operating) drawModal(s, ctx);
     if (s.book) drawPlan(s, ctx);
-    if (s.toast) drawToast(s, ctx, t);
-    D.banner(ctx, s.banner);
-    B.draw(ctx, s.bubble, s.player, s.operating ? { maxBottom: D.modalArea(H_MODAL).outer.y - 6 } : {});
+    if (!s.operating && !s.book) B.marker(ctx, s.bubble, s.player, t);
     ctx.restore();
 
     D.hud(ctx, t, {
@@ -312,7 +312,7 @@
         { label: 'Contaminados', value: s.stats.contaminated, color: s.stats.contaminated ? T.red : T.ink, width: 150 },
       ],
     });
-    drawSidebar(s, ctx);
+    drawSidebar(s, ctx, t);
   }
 
   function drawLine(ctx, t) {
@@ -416,18 +416,18 @@
       D.paragraph(ctx, 'Antes de arrancar, revisa que el protocolo del plan de reacción esté completo. Si falta algo, la cerveza sale contaminada.', a.x, a.y + 44, a.w, { size: 15, color: T.dim });
       if (s.cfg.showProtocol) D.text(ctx, missing.length ? `Falta: ${missing.map((x) => M.STOP_STEPS[x].short).join(', ')}` : '✔ Protocolo completo', a.x, a.y + 110, { size: 16, weight: 700, color: missing.length ? T.red : T.ok });
       D.progressBar(ctx, a.x, a.y + 140, a.w, 26, s.action.progress / START_HOLD, T.red);
-      D.text(ctx, 'Mantén ESPACIO para ARRANCAR', a.x + a.w / 2, a.y + 159, { size: 16, weight: 800, color: '#fff', align: 'center' });
+      D.hints(ctx, [[{ key: 'ESPACIO', pad: 'a' }, 'mantén para ARRANCAR']], a.x + a.w / 2, a.y + 153, { size: 13, align: 'center', ink: '#fff', color: '#fff' });
       return;
     }
     if (id === 'cip' && !s.action.choice) {
       D.text(ctx, 'Elige el programa de limpieza', a.x, a.y + 10, { size: 20, weight: 800 });
       for (const o of cipOptions()) {
         D.panel(ctx, o.x, o.y, o.w, o.h, { fill: '#22160f', edge: ACCENT, radius: 10 });
-        D.keycap(ctx, o.key, o.x + 26, o.y + 30, { size: 18, color: ACCENT });
-        D.text(ctx, M.STOP_STEPS[o.step].label, o.x + 50, o.y + 37, { size: 22, weight: 800 });
-        D.text(ctx, `${M.fmtNum(M.STOP_STEPS[o.step].time * s.cfg.timeMul, 1)} s de limpieza`, o.x + 50, o.y + 64, { size: 14, color: T.dim });
+        const kw = D.control(ctx, { key: o.key, pad: o.key === '1' ? 'lb' : 'rb' }, o.x + 14, o.y + 30, { size: 16, color: ACCENT });
+        D.text(ctx, M.STOP_STEPS[o.step].label, o.x + 24 + kw, o.y + 37, { size: 22, weight: 800 });
+        D.text(ctx, `${M.fmtNum(M.STOP_STEPS[o.step].time * s.cfg.timeMul, 1)} s de limpieza`, o.x + 24 + kw, o.y + 64, { size: 14, color: T.dim });
       }
-      D.text(ctx, 'Pulsa 1 o 2 (o haz clic)', a.x + a.w / 2, a.y + 190, { size: 14, color: T.dim, align: 'center' });
+      D.text(ctx, 'Pulsa el botón del programa (o haz clic)', a.x + a.w / 2, a.y + 190, { size: 14, color: T.dim, align: 'center' });
       return;
     }
     const step = stepFor(s, id);
@@ -440,7 +440,8 @@
     }
     const need = info.time * s.cfg.timeMul;
     D.progressBar(ctx, a.x, a.y + 60, a.w, 26, s.action.progress / need, T.ok);
-    D.text(ctx, s.action.running ? 'Limpiando…' : 'Mantén ESPACIO para hacerlo', a.x + a.w / 2, a.y + 79, { size: 16, weight: 800, color: '#fff', align: 'center' });
+    if (s.action.running) D.text(ctx, 'Limpiando…', a.x + a.w / 2, a.y + 79, { size: 16, weight: 800, color: '#fff', align: 'center' });
+    else D.hints(ctx, [[{ key: 'ESPACIO', pad: 'a' }, 'mantén para hacerlo']], a.x + a.w / 2, a.y + 73, { size: 13, align: 'center', ink: '#fff', color: '#fff' });
     D.paragraph(ctx, '¿Seguro que este paso toca? Si no está en el plan de reacción para este paro, solo retrasa la producción.', a.x, a.y + 122, a.w, { size: 14, color: T.dim });
   }
 
@@ -482,61 +483,63 @@
       D.text(ctx, rule.range, x + 306, by + 28, { size: 20, weight: 800, color: '#c4501a' });
       D.paragraph(ctx, rule.steps.map((st) => M.STOP_STEPS[st].label).join(' + '), x + 306, by + 54, w - 350, { size: 16, weight: 700, color: '#2a170d', maxLines: 2 });
     });
-    D.text(ctx, `${s.cfg.tab ? 'TAB' : 'E'} cerrar · el reloj sigue corriendo`, x + w / 2, y + h - 14, { size: 14, weight: 700, color: '#7a5030', align: 'center' });
+    D.hints(ctx, [[s.cfg.tab ? { key: 'TAB', pad: 'y' } : { key: 'E', pad: 'b' }, 'cerrar · el reloj sigue corriendo']], x + w / 2, y + h - 20, { size: 13, align: 'center', ink: '#7a5030', color: '#c4501a' });
   }
 
-  function drawToast(s, ctx, t) {
-    const big = s.cfg.bigToast;
-    const w = big ? 520 : 400;
-    const h = big ? 130 : 96;
-    const x = big ? (D.VIEW.mapWidth - w) / 2 : D.VIEW.mapWidth - w - 18;
-    const y = big ? 250 : D.VIEW.hud + 14;
-    const shake = Math.sin(t * 40) * (s.toast.life > s.toast.max - 0.4 ? 4 : 0);
-    ctx.save();
-    ctx.translate(shake, 0);
-    D.panel(ctx, x, y, w, h, { fill: '#2a0f0a', edge: T.red, radius: 12, glow: T.red });
-    D.text(ctx, '⚠ NOTIFICACIÓN', x + 16, y + 24, { size: 13, weight: 800, color: T.red });
-    D.text(ctx, s.toast.text, x + 16, y + (big ? 62 : 54), { size: big ? 24 : 19, weight: 800, color: T.ink });
-    const by = y + h - 22;
-    D.keycap(ctx, 'Y', x + 30, by, { size: 13, color: T.red });
-    D.text(ctx, 'Arrancar ya', x + 48, by + 5, { size: 14, weight: 700, color: '#ffb3a8' });
-    D.keycap(ctx, 'X', x + 170, by, { size: 13, color: '#6e5a48' });
-    D.text(ctx, 'Seguir el protocolo', x + 188, by + 5, { size: 14, weight: 700, color: T.dim });
-    D.progressBar(ctx, x + 16, y + h - 6, w - 32, 3, s.toast.life / s.toast.max, T.red);
-    ctx.restore();
-  }
-
-  function drawSidebar(s, ctx) {
+  function drawSidebar(s, ctx, t) {
     D.sidebar(ctx, 'AVISO DE PARO');
     const x = D.VIEW.mapWidth + 18;
-    D.panel(ctx, x - 4, 104, 290, 92, { fill: '#2a170d', edge: ACCENT, radius: 8 });
-    D.text(ctx, 'Línea detenida hace', x + 8, 128, { size: 14, color: T.dim });
-    D.text(ctx, M.hoursLabel(s.round.hours), x + 8, 168, { size: 34, weight: 800, color: ACCENT });
+    D.panel(ctx, x - 4, 100, 290, 64, { fill: '#2a170d', edge: ACCENT, radius: 8 });
+    D.text(ctx, 'Línea detenida hace', x + 8, 118, { size: 13, color: T.dim });
+    D.text(ctx, M.hoursLabel(s.round.hours), x + 8, 151, { size: 28, weight: 800, color: ACCENT });
 
-    D.text(ctx, s.cfg.showProtocol ? 'PROTOCOLO A SEGUIR' : 'PASOS REALIZADOS', x, 230, { size: 13, weight: 700, color: T.dim });
-    let y = 242;
+    D.text(ctx, s.cfg.showProtocol ? 'PROTOCOLO A SEGUIR' : 'PASOS REALIZADOS', x, 186, { size: 13, weight: 700, color: T.dim });
+    let y = 194;
     if (s.cfg.showProtocol) {
       for (const st of s.round.rule.steps) {
         D.checkRow(ctx, x - 4, y, M.STOP_STEPS[st].short, s.round.done.includes(st) ? 'done' : 'next', { width: 290 });
-        y += 42;
+        y += 38;
       }
       D.checkRow(ctx, x - 4, y, 'Arrancar la línea', missingSteps(s).length ? 'todo' : 'next', { width: 290 });
-      y += 42;
     } else {
-      if (!s.round.done.length) D.text(ctx, 'Ninguno todavía.', x, y + 20, { size: 15, color: T.faint });
+      if (!s.round.done.length) D.text(ctx, 'Ninguno todavía.', x, y + 18, { size: 14, color: T.faint });
       for (const st of s.round.done) {
         D.checkRow(ctx, x - 4, y, M.STOP_STEPS[st].short, 'done', { width: 290 });
-        y += 42;
+        y += 38;
       }
-      D.paragraph(ctx, s.cfg.tab ? '¿No sabes qué toca? Consulta el plan (TAB).' : '¿No sabes qué toca? Ve al tablero PLAN DE REACCIÓN.', x, Math.max(y + 24, 300), 286, { size: 14, color: T.warn });
+      const hy = Math.max(y + 22, 240);
+      D.text(ctx, '¿No sabes qué toca?', x, hy, { size: 14, weight: 700, color: T.warn });
+      if (s.cfg.tab) D.hints(ctx, [[{ key: 'TAB', pad: 'y' }, 'consulta el plan']], x, hy + 22, { size: 12, ink: T.warn });
+      else D.text(ctx, 'Ve al tablero PLAN DE REACCIÓN.', x, hy + 22, { size: 14, color: T.warn });
     }
 
-    D.text(ctx, 'VIDAS', x, 500, { size: 13, weight: 700, color: T.dim });
-    for (let i = 0; i < s.cfg.lives; i++) D.pumpkin(ctx, x + 24 + i * 54, 530, 26, i < s.lives);
-    D.text(ctx, 'Cada arranque sin protocolo = 1 lote contaminado', x, 574, { size: 12, color: T.faint });
-    D.text(ctx, 'PRESIÓN DEL TURNO', x, 610, { size: 13, weight: 700, color: T.dim });
-    D.text(ctx, `${s.stats.resisted} notificaciones resistidas`, x, 634, { size: 15, weight: 600, color: T.ok });
-    D.text(ctx, 'WASD mover · E operar · TAB plan', x + 143, 706, { size: 12, color: T.faint, align: 'center' });
+    D.text(ctx, 'VIDAS', x, 364, { size: 13, weight: 700, color: T.dim });
+    for (let i = 0; i < s.cfg.lives; i++) D.pumpkin(ctx, x + 80 + i * 46, 358, 22, i < s.lives);
+    D.text(ctx, `Presiones resistidas: ${s.stats.resisted}`, x, 396, { size: 14, weight: 600, color: T.ok });
+    D.text(ctx, 'Arrancar sin protocolo = lote contaminado', x, 416, { size: 11, color: T.faint });
+
+    const toast = s.toast && {
+      kind: 'toast',
+      label: '⚠ NOTIFICACIÓN',
+      text: s.toast.text,
+      color: T.red,
+      life: s.toast.life,
+      max: s.toast.max,
+      progress: s.toast.life / s.toast.max,
+      // En difícil la notificación no deja de vibrar.
+      shake: s.cfg.bigToast ? 1 : Math.max(0, s.toast.life - (s.toast.max - 0.5)) * 2,
+      actions: [
+        [{ key: 'Y', pad: 'lt' }, 'Arrancar ya'],
+        [{ key: 'X', pad: 'rt' }, 'Seguir el protocolo'],
+      ],
+    };
+    B.dock(ctx, D.dockRect(430), { bubble: s.bubble, notices: [toast, s.banner], t });
+    D.footer(ctx, [
+      [{ key: 'WASD', pad: 'lstick' }, 'mover'],
+      [{ key: 'E', pad: 'x' }, 'operar'],
+      [{ key: 'ESPACIO', pad: 'a' }, 'mantener'],
+      [s.cfg.tab ? { key: 'TAB', pad: 'y' } : { key: 'E', pad: 'x' }, 'plan'],
+    ]);
   }
 
   function report(s) {
@@ -615,7 +618,7 @@
     difficulties: {
       facil: ['La tarjeta muestra el protocolo y resalta las estaciones', '3 vidas', 'Pocas notificaciones de presión'],
       normal: ['Tienes que consultar el plan (TAB)', '2 vidas · cada error resta 2 s', 'Notificaciones frecuentes'],
-      dificil: ['El plan solo está en el tablero del mapa', '1 vida: un arranque sin protocolo es game over', 'Notificaciones constantes en medio de la pantalla'],
+      dificil: ['El plan solo está en el tablero del mapa', '1 vida: un arranque sin protocolo es game over', 'Notificaciones constantes que no paran de vibrar'],
     },
     create,
   });

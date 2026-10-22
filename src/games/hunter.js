@@ -81,7 +81,6 @@
       target: null,
       tool: { sel: 0, phase: 'choose', progress: 0, shake: 0 },
       fact: null,
-      lastFact: null,
       stats: { found: 0, firstTry: 0, errors: 0, decoys: 0 },
       flick: 1,
     };
@@ -256,8 +255,7 @@
       if (h.firstTry) s.stats.firstTry++;
       const pool = M.FACTS[h.type].concat(M.FACTS.general);
       const text = pool[Math.floor(s.rng() * pool.length)];
-      s.fact = { title: M.HAZARDS[h.type].name, text, life: 6.5, max: 6.5 };
-      s.lastFact = s.fact;
+      s.fact = { title: M.HAZARDS[h.type].name, text, life: 9, max: 9 };
       D.floatAdd(s.floats, h.x, h.y - 30, '✔ Riesgo eliminado', T.ok, 18);
       D.sfx('resolved');
       s.target = null;
@@ -313,9 +311,7 @@
     if (near) D.prompt(ctx, s.player, near.kind === 'hazard' ? 'limpiar' : 'revisar', ACCENT);
     D.floatsDraw(ctx, s.floats);
     if (s.target) drawToolModal(s, ctx, t);
-    if (s.fact) drawFact(ctx, s.fact);
-    D.banner(ctx, s.banner);
-    B.draw(ctx, s.bubble, s.player, s.target ? { maxBottom: D.modalArea(H_TOOL).outer.y - 6 } : {});
+    if (!s.target) B.marker(ctx, s.bubble, s.player, t);
     ctx.restore();
 
     D.hud(ctx, t, {
@@ -534,11 +530,21 @@
   function drawToolModal(s, ctx, t) {
     const h = s.target;
     const hz = M.HAZARDS[h.type];
-    const a = D.modal(ctx, `${hz.name.toUpperCase()} en la ${hz.where}`, H_TOOL, { accent: ACCENT, hint: 'Esc salir' });
+    const a = D.modal(ctx, `${hz.name.toUpperCase()} en la ${hz.where}`, H_TOOL, { accent: ACCENT, hint: [[{ key: 'Esc', pad: 'b' }, 'salir']] });
     monster(ctx, h.type, a.x + 30, a.y + 22, 20, t, 1);
     if (s.tool.phase === 'choose') {
       D.text(ctx, '¿Con qué lo limpias?', a.x + 70, a.y + 18, { size: 20, weight: 800 });
-      D.text(ctx, '← → elegir · ESPACIO usar · 1-4 o clic', a.x + 70, a.y + 40, { size: 13, color: T.dim });
+      D.hints(
+        ctx,
+        [
+          [{ key: '← →', pad: 'dpadLR' }, 'elegir'],
+          [{ key: 'ESPACIO', pad: 'a' }, 'usar'],
+          [{ key: '1-4', pad: ['lb', 'rb', 'lt', 'rt'] }, 'directo'],
+        ],
+        a.x + 70,
+        a.y + 44,
+        { size: 11, gap: 14, ink: T.dim }
+      );
       toolCards().forEach((c, i) => {
         const tl = M.TOOLS[c.id];
         const sel = s.tool.sel === i;
@@ -547,7 +553,7 @@
         ctx.translate(shake, 0);
         D.panel(ctx, c.x, c.y, c.w, c.h, { fill: sel ? '#2a1a3a' : '#1c1420', edge: sel ? (s.tool.shake > 0 ? T.red : ACCENT) : '#3a2a44', radius: 10, glow: sel ? ACCENT : null });
         toolIcon(ctx, c.id, c.x + c.w / 2, c.y + 42, tl.color);
-        D.keycap(ctx, String(i + 1), c.x + 18, c.y + 18, { size: 12, color: sel ? ACCENT : '#5a4a66' });
+        D.control(ctx, { key: String(i + 1), pad: ['lb', 'rb', 'lt', 'rt'][i] }, c.x + 6, c.y + 18, { size: 12, color: sel ? ACCENT : '#5a4a66' });
         D.text(ctx, tl.name, c.x + c.w / 2, c.y + 88, { size: 15, weight: 700, align: 'center' });
         D.text(ctx, tl.tag, c.x + c.w / 2, c.y + 106, { size: 13, weight: 600, color: tl.color, align: 'center' });
         if (s.cfg.showUse) D.text(ctx, tl.use, c.x + c.w / 2, c.y + 123, { size: 11, color: T.dim, align: 'center' });
@@ -555,7 +561,11 @@
       });
     } else {
       const tl = M.TOOLS[hz.tool];
-      D.text(ctx, `${tl.name}: mantén ESPACIO para aplicar`, a.x + 70, a.y + 26, { size: 20, weight: 800, color: tl.color });
+      D.text(ctx, `${tl.name}: mantén`, a.x + 70, a.y + 26, { size: 20, weight: 800, color: tl.color });
+      ctx.font = D.font(20, 800);
+      const tw = ctx.measureText(`${tl.name}: mantén`).width;
+      const cw = D.control(ctx, { key: 'ESPACIO', pad: 'a' }, a.x + 80 + tw, a.y + 19, { size: 15, color: tl.color });
+      D.text(ctx, 'para aplicar', a.x + 90 + tw + cw, a.y + 26, { size: 20, weight: 800, color: tl.color });
       D.ring(ctx, a.x + a.w / 2, a.y + 150, 54, s.tool.progress / 1.1, tl.color, 12);
       toolIcon(ctx, hz.tool, a.x + a.w / 2, a.y + 150, tl.color);
     }
@@ -601,47 +611,35 @@
     ctx.restore();
   }
 
-  function drawFact(ctx, f) {
-    const alpha = Math.min(1, f.life / 0.5, (f.max - f.life) / 0.25);
-    ctx.save();
-    ctx.globalAlpha = Math.max(0, alpha);
-    const x = 140;
-    const y = 586;
-    const w = 680;
-    D.panel(ctx, x, y, w, 100, { fill: '#f2e3c6', edge: T.brass, radius: 10, glow: T.brass });
-    D.text(ctx, 'SABÍAS QUE…', x + 18, y + 28, { size: 18, weight: 800, color: '#7a3010' });
-    D.text(ctx, f.title, x + w - 18, y + 28, { size: 14, weight: 700, color: '#7a5030', align: 'right' });
-    D.paragraph(ctx, f.text, x + 18, y + 54, w - 36, { size: 17, weight: 600, color: '#2a170d', maxLines: 2 });
-    ctx.restore();
-  }
-
   function drawSidebar(s, ctx, t) {
     D.sidebar(ctx, 'FOCOS DE CONTAMINACIÓN');
     const x = D.VIEW.mapWidth + 18;
     s.hazards.forEach((h, i) => {
-      const y = 106 + i * 48;
+      const y = 100 + i * 38;
       const hz = M.HAZARDS[h.type];
       ctx.fillStyle = h.found ? D.T.okDark : '#1c1420';
-      D.roundRect(ctx, x - 4, y, 290, 42, 8);
+      D.roundRect(ctx, x - 4, y, 290, 34, 8);
       ctx.fill();
-      if (h.found || h.seen) monster(ctx, h.type, x + 20, y + 22, 12, t, h.found ? 1 : 0.6);
-      else D.text(ctx, '?', x + 20, y + 29, { size: 22, weight: 800, color: '#5a4a66', align: 'center' });
-      D.text(ctx, h.found ? hz.name : h.seen ? `${hz.name} (sin limpiar)` : '???', x + 44, y + 27, { size: 16, weight: 700, color: h.found ? T.ok : h.seen ? T.warn : '#6a5a76' });
-      if (h.found) D.text(ctx, '✔', x + 276, y + 28, { size: 18, weight: 800, color: T.ok, align: 'right' });
+      if (h.found || h.seen) monster(ctx, h.type, x + 16, y + 17, 10, t, h.found ? 1 : 0.6);
+      else D.text(ctx, '?', x + 16, y + 24, { size: 20, weight: 800, color: '#5a4a66', align: 'center' });
+      D.text(ctx, h.found ? hz.name : h.seen ? `${hz.name} (sin limpiar)` : '???', x + 38, y + 23, { size: 15, weight: 700, color: h.found ? T.ok : h.seen ? T.warn : '#6a5a76' });
+      if (h.found) D.text(ctx, '✔', x + 276, y + 24, { size: 17, weight: 800, color: T.ok, align: 'right' });
     });
-    D.text(ctx, 'HERRAMIENTAS', x, 372, { size: 13, weight: 700, color: T.dim });
+    D.text(ctx, 'HERRAMIENTAS', x, 306, { size: 13, weight: 700, color: T.dim });
     M.TOOL_ORDER.forEach((id, i) => {
       const tl = M.TOOLS[id];
-      const y = 398 + i * 40;
-      D.keycap(ctx, String(i + 1), x + 12, y, { size: 12, color: tl.color });
-      D.text(ctx, tl.name, x + 34, y + 2, { size: 15, weight: 700 });
-      D.text(ctx, s.cfg.showUse ? tl.use : tl.tag, x + 34, y + 18, { size: 12, color: tl.color });
+      const y = 328 + i * 28;
+      const w = D.control(ctx, { key: String(i + 1), pad: ['lb', 'rb', 'lt', 'rt'][i] }, x, y, { size: 11, color: tl.color });
+      D.text(ctx, tl.name, x + w + 8, y + 5, { size: 14, weight: 700 });
+      D.text(ctx, s.cfg.showUse ? tl.use : tl.tag, x + 286, y + 5, { size: 11, color: tl.color, align: 'right' });
     });
-    if (s.lastFact) {
-      D.text(ctx, 'ÚLTIMA FICHA', x, 572, { size: 13, weight: 700, color: T.dim });
-      D.paragraph(ctx, s.lastFact.text, x, 594, 284, { size: 13, color: T.ink, maxLines: 4 });
-    }
-    D.text(ctx, 'WASD mover · E limpiar', x + 143, 706, { size: 12, color: T.faint, align: 'center' });
+    const fact = s.fact && { kind: 'paper', label: `SABÍAS QUE… · ${s.fact.title}`, text: '', sub: s.fact.text, life: s.fact.life, max: s.fact.max };
+    B.dock(ctx, D.dockRect(440), { bubble: s.bubble, notices: [fact, s.banner], t });
+    D.footer(ctx, [
+      [{ key: 'WASD', pad: 'lstick' }, 'mover'],
+      [{ key: 'E', pad: 'x' }, 'limpiar'],
+      [{ key: '1-4', pad: ['lb', 'rt'] }, 'herramienta'],
+    ]);
   }
 
   function report(s) {
