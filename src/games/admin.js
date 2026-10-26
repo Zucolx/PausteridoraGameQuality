@@ -1,9 +1,9 @@
-// Supervisor de Turno: administración del turno de envasado con GLY, LEF y OSE.
+// Supervisor de Turno: administración del turno de envasado con LEF, GLY y OSE.
 // 6 turnos de 20 s (máx. 2 min). Dos modos:
-//  · Diagnóstico de turno: lee el tablero y decide qué tipo de problema hubo
-//    (planificación, externo, interno o excelente) y con quién atacarlo.
+//  · Diagnóstico de turno: lee el tablero y decide dónde está la gran caída
+//    (interna, planificada/externa, sin programar o turno excelente) y con quién atacarla.
 //  · ¿Qué KPI cae?: en el reporte de fin de turno, clasifica cada pérdida por el
-//    primer KPI que la ve (GLY, LEF u OSE).
+//    primer KPI que la detecta (LEF, GLY u OSE; o los tres si es un error de dato).
 // Los KPI se calculan siempre con las causas reales: los reportes pueden estar sin
 // verificar o equivocados, pero los números no mienten.
 (function () {
@@ -26,19 +26,22 @@
     dificil: { simA: 14, simB: 8, decoy: 1, unverified: 0.25, wrong: 0.3, jokers: 1, tags: false, gapHints: false, lineAlways: false, colorTimeline: false, labels: false, itemsB: 4, traps: 2 },
   };
 
-  // Botones en rombo, igual que la cara del mando: arriba GLY, izquierda LEF, derecha OSE, abajo OK.
+  // Botones en rombo, igual que la cara del mando y en el orden LEF ≥ GLY ≥ OSE:
+  // arriba LEF (△/Y), izquierda GLY (□/X), derecha OSE (○/B), abajo OK o "los tres" (✕/A).
   const SLOTS = {
-    GLY: { key: '↑', pad: 'y', pos: 'top' },
-    LEF: { key: '←', pad: 'x', pos: 'left' },
+    LEF: { key: '↑', pad: 'y', pos: 'top' },
+    GLY: { key: '←', pad: 'x', pos: 'left' },
     OSE: { key: '→', pad: 'b', pos: 'right' },
     OK: { key: '↓', pad: 'a', pos: 'bottom' },
   };
-  const SLOT_CAT = { GLY: 'plan', LEF: 'ext', OSE: 'int', OK: 'ok' };
+  const SLOT_CAT = { LEF: 'int', GLY: 'pe', OSE: 'ns', OK: 'ok' };
+  const POS_INDEX = { left: 0, top: 1, right: 2 };
   const CTRL = {
     joker: { key: 'C', pad: 'lb' },
     view: { key: 'V', pad: 'rb' },
     help: { key: 'H', pad: 'select' },
   };
+  const ROWS = ['LEF', 'GLY', 'OSE'];
 
   const PANEL = {
     kpi: { x: 16, y: 76, w: 400, h: 562 },
@@ -47,6 +50,12 @@
   };
   const MSG = { x: 8, y: 646, w: 1264, h: 66 };
   const MACHINES = ['Depaletizadora', 'Lavadora', 'Llenadora', 'Pasteurizador', 'Etiquetadora', 'Paletizadora'];
+
+  // Pérdidas que pueden ocupar horas en el turno (23 y 24 son errores de dato).
+  const TIMED = K.LOSSES.filter((d) => !d.noHours);
+  // El diagnóstico usa los ítems de un solo KPI (1-18); los que "pueden caer en más de
+  // uno" quedan como trampas del modo "¿Qué KPI cae?".
+  const DIAG_POOL = TIMED.filter((d) => !d.mixed);
 
   // ------------------------------------------------------------- Estado
 
@@ -78,7 +87,7 @@
         actionOk: 0,
         unanswered: 0,
         jokersUsed: 0,
-        items: { GLY: { ok: 0, total: 0 }, LEF: { ok: 0, total: 0 }, OSE: { ok: 0, total: 0 } },
+        items: { LEF: { ok: 0, total: 0 }, GLY: { ok: 0, total: 0 }, OSE: { ok: 0, total: 0 }, TODOS: { ok: 0, total: 0 } },
         confusions: {},
       },
     };
@@ -112,7 +121,8 @@
 
   // Reparte las pérdidas a lo largo de las 12 h sin solaparse.
   function schedule(rng, losses) {
-    const order = D.shuffle(rng, losses);
+    const timed = losses.filter((l) => !l.def.noHours);
+    const order = D.shuffle(rng, timed);
     const busy = order.reduce((a, l) => a + l.hours, 0);
     const free = Math.max(0.5, K.HOURS - busy - 0.3);
     const cuts = order.map(() => rng());
@@ -123,7 +133,9 @@
       l.start = round1(t);
       t = l.start + l.hours;
     });
-    return order.sort((a, b) => a.start - b.start);
+    // Los errores de dato no ocupan tiempo: se reportan al final del turno.
+    for (const l of losses) if (l.def.noHours) l.start = K.HOURS - 0.01;
+    return losses.slice().sort((a, b) => a.start - b.start);
   }
 
   // Reporte del operador para cada pérdida: correcto, sin verificar o equivocado.
@@ -131,12 +143,12 @@
     const { cfg, rng } = s;
     return losses.map((l) => {
       let status = 'ok';
-      if (!l.def.base) {
+      if (!l.def.base && !l.def.noHours) {
         const x = rng();
         if (x < cfg.wrong) status = 'wrong';
         else if (x < cfg.wrong + cfg.unverified) status = 'unverified';
       }
-      const fake = status === 'wrong' ? pick(rng, K.LOSSES.filter((d) => d.cat !== l.def.cat && !d.base)) : null;
+      const fake = status === 'wrong' ? pick(rng, TIMED.filter((d) => d.cat !== l.def.cat && !d.base)) : null;
       return { loss: l, status, fake, verified: false };
     });
   }
@@ -144,7 +156,7 @@
   function genDiag(s) {
     const { rng, cfg } = s;
     // Variedad: no repetir el mismo tipo tres veces seguidas.
-    const types = ['ok', 'plan', 'ext', 'int', 'ext', 'int'];
+    const types = ['ok', 'int', 'pe', 'ns', 'int', 'pe'];
     let type;
     do type = pick(rng, types);
     while (s.lastType.length >= 2 && s.lastType.slice(-2).every((x) => x === type));
@@ -153,20 +165,20 @@
     const losses = [];
     const used = new Set();
     const take = (cat, hours, id = null) => {
-      const pool = K.LOSSES.filter((d) => (id ? d.id === id : d.cat === cat && !d.base && !used.has(d.id)));
+      const pool = DIAG_POOL.filter((d) => (id ? d.id === id : d.cat === cat && !d.base && !used.has(d.id)));
       const def = pick(rng, pool);
       used.add(def.id);
       const l = { def, hours: Math.max(0.1, round1(hours)) };
       losses.push(l);
       return l;
     };
-    if (rng() < 0.85) take('plan', 0.5, 'cambio');
-    const others = ['plan', 'ext', 'int'].filter((c) => c !== type);
+    if (rng() < 0.85) take('pe', 0.5, 'cambio-estandar');
+    const others = ['int', 'pe', 'ns'].filter((c) => c !== type);
     if (type === 'ok') {
-      if (rng() < 0.7) take('ext', 0.1 + rng() * 0.2);
       if (rng() < 0.7) take('int', 0.1 + rng() * 0.2);
+      if (rng() < 0.4) take('pe', 0.1 + rng() * 0.2);
       // Un turno real nunca es perfecto: al menos una pérdida pequeña.
-      if (!losses.length) take(pick(rng, ['ext', 'int']), 0.1 + rng() * 0.2);
+      if (!losses.length) take('int', 0.1 + rng() * 0.2);
     } else {
       const total = 1.7 + rng() * 1.1;
       const parts = type === 'int' ? 1 + rint(rng, 3) : 1 + rint(rng, 2);
@@ -176,16 +188,20 @@
         take(type, h);
         left -= h;
       }
-      for (const c of others) if (rng() < 0.5 && c !== 'plan') take(c, 0.1 + rng() * 0.2);
+      // Ruido: alguna pérdida interna pequeña, casi siempre presente.
+      if (type !== 'int' && rng() < 0.6) take('int', 0.1 + rng() * 0.2);
       // Señuelo: otra pérdida de tamaño medio que acerca las brechas.
-      if (rng() < cfg.decoy) take(pick(rng, others.filter((c) => c !== 'plan' || !used.has('cambio'))), 0.6 + rng() * 0.4);
+      if (rng() < cfg.decoy) take(pick(rng, others), 0.6 + rng() * 0.4);
     }
-    // Garantiza que la causa dominante destaque (y que "excelente" sea de verdad excelente).
-    const k = K.kpis(losses.map((l) => ({ ...l, start: 0 })));
+    // La causa dominante debe destacar en el tablero por al menos 5 puntos.
     if (type !== 'ok') {
-      const second = Math.max(...others.map((c) => k[c]));
-      const lack = second + 0.5 - k[type];
-      if (lack > 0) losses.find((l) => l.def.cat === type).hours = round1(losses.find((l) => l.def.cat === type).hours + lack + 0.1);
+      for (let i = 0; i < 20; i++) {
+        const g = K.gaps(K.kpis(losses.map((l) => ({ ...l, start: 0 }))));
+        const second = Math.max(...others.map((c) => g[c]));
+        if (g[type] >= 0.12 && g[type] - second >= 0.05) break;
+        const main = losses.find((l) => l.def.cat === type);
+        main.hours = round1(main.hours + 0.3);
+      }
     }
     const sched = schedule(rng, losses);
     const truth = K.diagnose(K.kpis(sched));
@@ -204,22 +220,24 @@
     const { rng, cfg } = s;
     const used = new Set();
     const defs = [];
-    for (const id of D.shuffle(rng, K.TRAPS).slice(0, cfg.traps)) {
-      used.add(id);
-      defs.push(K.LOSSES.find((d) => d.id === id));
+    // Trampas: los ítems que "pueden caer en más de un KPI" (difícil incluye los errores de dato).
+    const trapPool = K.LOSSES.filter((d) => d.mixed && (s.diff === 'dificil' || !d.noHours));
+    for (const def of D.shuffle(rng, trapPool).slice(0, cfg.traps)) {
+      used.add(def.id);
+      defs.push(def);
     }
-    const cats = D.shuffle(rng, ['plan', 'ext', 'int']);
+    const cats = D.shuffle(rng, ['int', 'pe', 'ns']);
     let ci = 0;
     while (defs.length < cfg.itemsB) {
       const cat = cats[ci++ % 3];
-      const pool = K.LOSSES.filter((d) => d.cat === cat && !used.has(d.id));
+      const pool = K.LOSSES.filter((d) => d.cat === cat && !d.mixed && !used.has(d.id));
       const def = pick(rng, pool);
       used.add(def.id);
       defs.push(def);
     }
     const losses = schedule(
       rng,
-      defs.map((def) => ({ def, hours: round1(0.3 + rng() * 1.2) }))
+      defs.map((def) => ({ def, hours: def.noHours ? 0 : round1(0.3 + rng() * 1.2) }))
     );
     return { type: null, losses, reports: makeReports(s, losses), answers: losses.map(() => null), cursor: 0 };
   }
@@ -236,7 +254,7 @@
     s.shift = sh;
     s.view = 'line';
     s.timeLeft = (SHIFTS - s.index) * SHIFT_S;
-    s.banner = D.makeBanner(`TURNO ${s.index + 1} DE ${SHIFTS} · 12 h en ${s.mode === 'diag' ? s.cfg.simA : s.cfg.simB} s`, ACCENT, s.mode === 'diag' ? 'Mira el tablero: ¿dónde está la gran caída?' : 'Observa la línea: al final clasificarás cada pérdida', 1.3);
+    s.banner = D.makeBanner(`TURNO ${s.index + 1} DE ${SHIFTS} · 12 h en ${sim(s)} s`, ACCENT, s.mode === 'diag' ? 'Mira el tablero: ¿dónde está la gran caída?' : 'Observa la línea: al final clasificarás cada pérdida', 1.3);
   }
 
   function sim(s) {
@@ -257,7 +275,11 @@
   }
 
   function activeLoss(sh) {
-    return sh.losses.find((l) => sh.clock >= l.start && sh.clock < l.start + l.hours) || null;
+    return sh.losses.find((l) => !l.def.noHours && sh.clock >= l.start && sh.clock < l.start + l.hours) || null;
+  }
+
+  function kpiOfCat(cat) {
+    return K.CATS[cat].kpi;
   }
 
   // ------------------------------------------------------------- Actualización
@@ -307,9 +329,10 @@
     }
     if (hit(['joker'], ['lb'])) useJoker(s);
 
+    // Teclado: flechas o 1-4. Mando: △ □ ○ ✕ (Y X B A) o la cruceta.
     let ans = null;
-    if (hit(['up', '1'], ['y', 'up'])) ans = 'GLY';
-    else if (hit(['left', '2'], ['x', 'left'])) ans = 'LEF';
+    if (hit(['up', '1'], ['y', 'up'])) ans = 'LEF';
+    else if (hit(['left', '2'], ['x', 'left'])) ans = 'GLY';
     else if (hit(['right', '3'], ['b', 'right'])) ans = 'OSE';
     else if (hit(['down', '4'], ['a', 'down'])) ans = 'OK';
     for (const c of input.clicks || []) {
@@ -345,13 +368,10 @@
   function answer(s, slot) {
     const sh = s.shift;
     if (s.mode === 'diag') {
-      if (sh.phase === 'run') {
-        if (slot === 'OK' || SLOT_CAT[slot]) diagAnswer(s, SLOT_CAT[slot]);
-      } else if (sh.phase === 'action' && slot !== 'OK') {
-        actionAnswer(s, sh.options[['LEF', 'GLY', 'OSE'].indexOf(slot)]);
-      }
-    } else if (sh.phase === 'report' && slot !== 'OK') {
-      itemAnswer(s, slot);
+      if (sh.phase === 'run') diagAnswer(s, SLOT_CAT[slot]);
+      else if (sh.phase === 'action' && slot !== 'OK') actionAnswer(s, sh.options[POS_INDEX[SLOTS[slot].pos]]);
+    } else if (sh.phase === 'report') {
+      itemAnswer(s, slot === 'OK' ? 'TODOS' : slot);
     }
   }
 
@@ -383,7 +403,7 @@
     sh.doneT = DONE_S;
     s.stats.max += 50;
     const correct = sh.owner;
-    const why = sh.type === 'ok' ? 'Turno excelente: no hay pérdida grande que atacar; se estandariza lo que funcionó.' : `${K.CATS[sh.type].power}`;
+    const why = sh.type === 'ok' ? 'Turno excelente: no hay pérdida grande que atacar; se estandariza lo que funcionó.' : K.CATS[sh.type].power;
     if (owner === correct) {
       s.stats.actionOk++;
       s.stats.points += 50;
@@ -403,20 +423,22 @@
     const sh = s.shift;
     const i = sh.cursor;
     const l = sh.losses[i];
-    const truth = K.CATS[l.def.cat].kpi;
+    const truth = kpiOfCat(l.def.cat);
     sh.answers[i] = kpi;
     s.stats.max += 50;
     s.stats.items[truth].total++;
+    const why = l.def.explain || K.CATS[l.def.cat].explain;
+    const said = truth === 'TODOS' ? 'los tres a la vez' : truth;
     if (kpi === truth) {
       s.stats.items[truth].ok++;
       s.stats.points += 50;
       D.floatAdd(s.floats, 1062, 290, '+50', T.ok, 22);
-      B.say(s.bubble, `${l.def.name}: ${truth}. ${l.def.trap || K.CATS[l.def.cat].explain}`, { kind: 'ok', life: 3.5 });
+      B.say(s.bubble, `${l.def.distort ? 'Distorsiona el LEF.' : `La detecta ${said}.`} ${why}`, { kind: 'ok', life: 4 });
       D.sfx('blip');
     } else {
       const key = `${truth} → dijiste ${kpi}`;
       s.stats.confusions[key] = (s.stats.confusions[key] || 0) + 1;
-      B.say(s.bubble, `"${l.def.name}" no cae primero en ${kpi}: cae en ${truth}. ${l.def.trap || K.CATS[l.def.cat].explain}`);
+      B.say(s.bubble, `No es ${kpi === 'TODOS' ? 'de los tres' : kpi}: ${l.def.distort ? 'el que se distorsiona es el LEF' : `la detecta primero ${said}`}. ${why}`);
     }
     sh.cursor++;
     if (sh.cursor >= sh.losses.length) {
@@ -437,7 +459,7 @@
     } else {
       for (let i = sh.cursor; i < sh.losses.length; i++) {
         s.stats.max += 50;
-        s.stats.items[K.CATS[sh.losses[i].def.cat].kpi].total++;
+        s.stats.items[kpiOfCat(sh.losses[i].def.cat)].total++;
       }
       if (sh.cursor < sh.losses.length) {
         s.stats.unanswered += sh.losses.length - sh.cursor;
@@ -488,6 +510,7 @@
   }
 
   function kpiColor(v) {
+    if (v == null) return T.faint;
     return v >= 0.9 ? T.ok : v >= 0.8 ? T.warn : T.red;
   }
 
@@ -505,7 +528,7 @@
     ctx.fill();
     const showCat = s.cfg.colorTimeline || revealed(s);
     for (const l of sh.losses) {
-      if (l.start > sh.clock) continue;
+      if (l.def.noHours || l.start > sh.clock) continue;
       const a = x + (l.start / K.HOURS) * w;
       const b = x + (Math.min(sh.clock, l.start + l.hours) / K.HOURS) * w;
       ctx.fillStyle = showCat ? K.CATS[l.def.cat].color : '#8a7a6a';
@@ -513,14 +536,15 @@
     }
     ctx.fillStyle = '#fff';
     ctx.fillRect(x + (sh.clock / K.HOURS) * w - 1, ty - 4, 2, 24);
-    D.text(ctx, showCat ? 'paradas por tipo' : 'paradas (causa sin clasificar)', x, ty + 32, { size: 11, color: T.faint });
+    D.text(ctx, showCat ? 'pérdidas por tipo' : 'pérdidas (causa sin clasificar)', x, ty + 32, { size: 11, color: T.faint });
 
     const k = K.kpis(sh.losses, Math.max(0.01, sh.clock));
     const showGaps = s.cfg.gapHints || revealed(s);
+    // Orden LEF ≥ GLY ≥ OSE: cada barra muestra la brecha que detecta primero.
     const rows = [
-      ['GLY', 'Productividad global · utilización', k.gly, 1, 'plan'],
-      ['LEF', 'Eficiencia de línea · sin pérdidas externas', k.lef, k.gly, 'ext'],
-      ['OSE', 'Efectividad real del sistema', k.ose, k.lef, 'int'],
+      ['LEF', 'EPT / tiempo de operación (LET)', k.lef, 1, 'int'],
+      ['GLY', 'EPT / tiempo programado', k.gly, k.lef ?? 1, 'pe'],
+      ['OSE', 'EPT / tiempo total', k.ose, k.gly ?? k.lef ?? 1, 'ns'],
     ];
     const bx = x;
     const bw = w;
@@ -534,16 +558,18 @@
       ctx.fillStyle = '#241c18';
       D.roundRect(ctx, bx, yb, bw, 24, 6);
       ctx.fill();
-      ctx.fillStyle = kpiColor(v);
-      D.roundRect(ctx, bx, yb, pos(v) - bx, 24, 6);
-      ctx.fill();
-      // Brecha: lo que este KPI descuenta respecto al anterior.
-      if (showGaps && above - v > 0.002) {
-        ctx.fillStyle = K.CATS[cat].color;
-        ctx.globalAlpha = 0.85;
-        ctx.fillRect(pos(v), yb, pos(above) - pos(v), 24);
-        ctx.globalAlpha = 1;
-        D.text(ctx, `−${((above - v) * 100).toFixed(1).replace('.', ',')} pts · ${K.CATS[cat].short.toLowerCase()}`, x + w, yb + 42, { size: 12, weight: 700, color: K.CATS[cat].color, align: 'right' });
+      if (v != null) {
+        ctx.fillStyle = kpiColor(v);
+        D.roundRect(ctx, bx, yb, pos(v) - bx, 24, 6);
+        ctx.fill();
+        // Brecha: lo que este KPI detecta respecto al anterior.
+        if (showGaps && above - v > 0.002) {
+          ctx.fillStyle = K.CATS[cat].color;
+          ctx.globalAlpha = 0.85;
+          ctx.fillRect(pos(v), yb, pos(above) - pos(v), 24);
+          ctx.globalAlpha = 1;
+          D.text(ctx, `−${((above - v) * 100).toFixed(1).replace('.', ',')} pts · ${K.CATS[cat].short.toLowerCase()}`, x + w, yb + 42, { size: 12, weight: 700, color: K.CATS[cat].color, align: 'right' });
+        }
       }
       for (const m of [0.6, 0.7, 0.8, 0.9]) {
         ctx.fillStyle = 'rgba(0,0,0,0.35)';
@@ -556,20 +582,20 @@
     if (revealed(s)) {
       const kf = K.kpis(sh.losses);
       D.text(ctx, 'HORAS PERDIDAS EN EL TURNO', x, y0, { size: 12, weight: 800, color: T.dim });
-      ['plan', 'ext', 'int'].forEach((c, i) => {
+      ['int', 'pe', 'ns'].forEach((c, i) => {
         const yy = y0 + 22 + i * 22;
         ctx.fillStyle = K.CATS[c].color;
         ctx.fillRect(x, yy - 10, 12, 12);
-        D.text(ctx, `${K.CATS[c].name} → ${K.CATS[c].kpi}`, x + 20, yy, { size: 14, weight: 600 });
+        D.text(ctx, `${K.CATS[c].short} → la detecta ${K.CATS[c].kpi}`, x + 20, yy, { size: 14, weight: 600 });
         D.text(ctx, fmtH(kf[c]), x + w, yy, { size: 14, weight: 700, color: K.CATS[c].color, align: 'right', family: D.MONO });
       });
-      D.text(ctx, 'GLY ≥ LEF ≥ OSE: cada uno descuenta un nivel más de pérdidas', x, y0 + 100, { size: 11, color: T.faint });
+      D.text(ctx, 'Mismo numerador (EPT) → LEF ≥ GLY ≥ OSE', x, y0 + 100, { size: 11, color: T.faint });
     } else if (s.cfg.gapHints && s.mode === 'diag') {
       D.text(ctx, 'REGLA RÁPIDA', x, y0, { size: 12, weight: 800, color: T.dim });
       const rules = [
-        ['GLY alto · LEF y OSE bajos', 'externo', K.CATS.ext.color],
-        ['GLY y LEF altos · OSE bajo', 'interno', K.CATS.int.color],
-        ['GLY, LEF y OSE bajos', 'planificación', K.CATS.plan.color],
+        ['LEF bajo (arrastra a GLY y OSE)', 'interno', K.CATS.int.color],
+        ['LEF alto · GLY bajo', 'planificada / externa', K.CATS.pe.color],
+        ['LEF y GLY altos · OSE bajo', 'sin programar', K.CATS.ns.color],
         ['todo alto (≥ 90 %)', 'excelente', T.ok],
       ];
       rules.forEach(([a, b, c], i) => {
@@ -577,8 +603,8 @@
         D.text(ctx, `→ ${b}`, x + w, y0 + 22 + i * 21, { size: 13, weight: 800, color: c, align: 'right' });
       });
     } else {
-      D.text(ctx, 'GLY ≥ LEF ≥ OSE', x, y0 + 20, { size: 20, weight: 800, color: T.ink });
-      D.paragraph(ctx, 'Cada KPI descuenta un nivel más de pérdidas: planificación (GLY), externas (LEF) e internas (OSE). Busca dónde está la gran caída.', x, y0 + 46, w, { size: 13, color: T.dim });
+      D.text(ctx, 'LEF ≥ GLY ≥ OSE', x, y0 + 20, { size: 20, weight: 800, color: T.ink });
+      D.paragraph(ctx, 'Mismo numerador (EPT), distinto denominador. Busca la brecha más grande: LEF = interna · LEF→GLY = planificada o externa · GLY→OSE = sin programar.', x, y0 + 46, w, { size: 13, color: T.dim });
     }
   }
 
@@ -618,13 +644,13 @@
     if (rep.verified) return rep.status === 'wrong' ? ['✖ estaba mal informado', T.red] : ['✔ verificado', T.ok];
     if (rep.status === 'unverified') return ['? sin verificar', T.warn];
     // En difícil todo reporte de operador llega sin verificar: no se distinguen los erróneos.
-    if (s.cfg.wrong > 0 && !rep.loss.def.base) return ['? reporte de operador', T.warn];
+    if (s.cfg.wrong > 0 && !rep.loss.def.base && !rep.loss.def.noHours) return ['? reporte de operador', T.warn];
     return null;
   }
 
   function drawReports(s, ctx, rc) {
     const sh = s.shift;
-    const list = sh.reports.filter((r) => r.loss.start <= sh.clock);
+    const list = sh.reports.filter((r) => !r.loss.def.noHours && r.loss.start <= sh.clock);
     if (!list.length) D.text(ctx, 'Sin reportes todavía.', rc.x + 6, rc.y + 24, { size: 14, color: T.faint });
     list.slice(-6).forEach((rep, i) => {
       const y = rc.y + i * 46;
@@ -641,18 +667,24 @@
       const dur = Math.min(l.hours, Math.max(0, sh.clock - l.start));
       D.text(ctx, fmtH(dur), rc.x + rc.w - 10, y + 17, { size: 13, weight: 700, color: T.dim, align: 'right', family: D.MONO });
       ctx.font = D.font(14, 700);
-      let txt = reportText(s, rep);
+      const full = reportText(s, rep);
+      let txt = full;
       while (ctx.measureText(txt).width > rc.w - 130 && txt.length > 4) txt = txt.slice(0, -2);
-      if (txt !== reportText(s, rep)) txt += '…';
+      if (txt !== full) txt += '…';
       D.text(ctx, txt, rc.x + 62, y + 17, { size: 14, weight: 700, color: known ? T.ink : '#ffd9a8' });
       const badge = reportBadge(s, rep);
-      if (rep.verified && rep.status === 'wrong') D.text(ctx, `reportado: ${rep.fake.name}`, rc.x + 62, y + 34, { size: 11, color: T.red });
+      if (rep.verified && rep.status === 'wrong') {
+        ctx.font = D.font(11, 600);
+        let said = `reportado: ${rep.fake.name}`;
+        while (ctx.measureText(said).width > rc.w - 200 && said.length > 12) said = said.slice(0, -2);
+        D.text(ctx, said.length < `reportado: ${rep.fake.name}`.length ? said + '…' : said, rc.x + 62, y + 34, { size: 11, color: T.red });
+      }
       else if (tagged(s)) D.text(ctx, `${K.CATS[l.def.cat].name} → ${K.CATS[l.def.cat].kpi}`, rc.x + 62, y + 34, { size: 11, color: K.CATS[l.def.cat].color });
       if (badge) D.text(ctx, badge[0], rc.x + rc.w - 10, y + 34, { size: 11, weight: 700, color: badge[1], align: 'right' });
     });
   }
 
-  // Vista de la línea: máquinas, botellas y la causa real de la parada en curso.
+  // Vista de la línea: máquinas, botellas y la causa real de la pérdida en curso.
   function drawLine(s, ctx, rc, t) {
     const sh = s.shift;
     const loss = activeLoss(sh);
@@ -666,19 +698,21 @@
     const my = rc.y + 40;
     const mh = 64;
     const vis = loss ? loss.def.visual : null;
-    const dark = vis === 'nostaff' || vis === 'noplan' || vis === 'replan';
-    // Transportador con botellas.
+    // Sin programar (o sin gente): la línea está apagada.
+    const dark = cat === 'ns' || vis === 'nostaff';
+    // Las pérdidas de velocidad y rechazo no paran la línea.
+    const flowing = !loss || vis === 'slow' || vis === 'reject';
     const cy = my + mh + 26;
     ctx.fillStyle = '#2b2320';
     ctx.fillRect(rc.x + 10, cy, rc.w - 20, 10);
-    const speed = !loss ? 60 : vis === 'slow' ? 18 : 0;
-    const emptyIn = vis === 'material' || vis === 'pallets';
+    const speed = !loss ? 60 : vis === 'slow' ? 18 : flowing ? 45 : 0;
+    const emptyIn = vis === 'material' || vis === 'beer';
     for (let i = 0; i < 18; i++) {
       let bx = rc.x + 14 + ((i * 22 + t * speed) % (rc.w - 30));
       if (emptyIn && bx < rc.x + rc.w * 0.45) continue;
       if (vis === 'jam' && i % 3 === 0) bx += 4;
-      ctx.fillStyle = dark ? '#3a3230' : '#c98a2a';
-      ctx.fillRect(bx, cy - 10 + (vis === 'jam' && i % 4 === 0 ? -6 : 0), 7, 10);
+      ctx.fillStyle = dark ? '#3a3230' : vis === 'reject' && i % 5 === 0 ? T.red : '#c98a2a';
+      ctx.fillRect(bx, cy - 10 + ((vis === 'jam' || vis === 'micro') && i % 4 === 0 ? -6 : 0), 7, 10);
     }
     MACHINES.forEach((name, i) => {
       const x = rc.x + 10 + i * (mw + 6);
@@ -687,7 +721,7 @@
       let edge = '#0d0807';
       if (hitHere && !dark) {
         const blink = Math.floor(t * 4) % 2 === 0;
-        fill = cat === 'int' ? (blink ? '#6a1d16' : '#3b1a16') : cat === 'ext' ? '#4a3416' : '#2e2340';
+        fill = cat === 'int' ? (blink ? '#6a1d16' : '#3b1a16') : '#4a3416';
         edge = color;
       }
       ctx.fillStyle = fill;
@@ -696,20 +730,16 @@
       ctx.strokeStyle = edge;
       ctx.lineWidth = 2;
       ctx.stroke();
-      // Luz de estado.
-      ctx.fillStyle = !loss ? T.ok : hitHere ? color : dark ? '#3a3230' : T.warn;
+      ctx.fillStyle = !loss ? T.ok : hitHere ? color : dark ? '#3a3230' : flowing ? T.ok : T.warn;
       ctx.beginPath();
       ctx.arc(x + mw / 2, my + 14, 6, 0, Math.PI * 2);
       ctx.fill();
-      ctx.save();
-      ctx.translate(x + mw / 2, my + mh - 10);
-      D.text(ctx, name.slice(0, 7) + (name.length > 7 ? '.' : ''), 0, 0, { size: 10, weight: 700, color: T.dim, align: 'center' });
-      ctx.restore();
+      D.text(ctx, name.slice(0, 7) + (name.length > 7 ? '.' : ''), x + mw / 2, my + mh - 10, { size: 10, weight: 700, color: T.dim, align: 'center' });
       if (hitHere && !dark) drawCause(ctx, vis, x + mw / 2, my + 38, color, t);
     });
     // Rótulo de estado (en difícil solo el color y la animación).
     let label = 'LÍNEA PRODUCIENDO';
-    if (loss) label = s.cfg.labels ? loss.def.name.toUpperCase() : cat === 'int' ? 'PARADA · ALARMA DE MÁQUINA' : cat === 'ext' ? 'PARADA · ESPERANDO' : 'PARADA PREVISTA';
+    if (loss) label = s.cfg.labels ? loss.def.name.toUpperCase() : cat === 'int' ? 'ALARMA EN LA LÍNEA' : cat === 'pe' ? 'PARADA · PLANIFICADA O ESPERANDO' : 'LÍNEA SIN PROGRAMAR';
     if (dark && loss) drawCause(ctx, vis, rc.x + rc.w / 2, my + 38, color, t);
     ctx.font = D.font(14, 800);
     const lw = Math.min(rc.w - 20, ctx.measureText(label).width + 30);
@@ -723,7 +753,7 @@
     D.text(ctx, label, rc.x + rc.w / 2, rc.y + 25, { size: 14, weight: 800, color: loss ? '#140c09' : T.ok, align: 'center' });
     ctx.restore();
     if (rc.h > 220) {
-      D.text(ctx, loss ? `Desde las ${clockLabel(loss.start)} · ${fmtH(Math.max(0, sh.clock - loss.start))}` : 'Sin paradas en este momento', rc.x + rc.w / 2, cy + 44, { size: 13, color: T.dim, align: 'center' });
+      D.text(ctx, loss ? `Desde las ${clockLabel(loss.start)} · ${fmtH(Math.max(0, sh.clock - loss.start))}` : 'Sin pérdidas en este momento', rc.x + rc.w / 2, cy + 44, { size: 13, color: T.dim, align: 'center' });
     }
   }
 
@@ -735,14 +765,14 @@
     ctx.strokeStyle = color;
     ctx.lineWidth = 3;
     const bob = Math.sin(t * 5) * 2;
-    if (vis === 'breakdown' || vis === 'longchange' || vis === 'changeover' || vis === 'pm') {
-      // Llave inglesa.
+    if (vis === 'breakdown' || vis === 'adjust' || vis === 'changeover' || vis === 'pm' || vis === 'project') {
+      // Llave inglesa (con reloj si es ajuste o exceso).
       ctx.rotate(-0.6 + Math.sin(t * 6) * 0.2);
       ctx.fillRect(-3, -2, 6, 18);
       ctx.beginPath();
       ctx.arc(0, -6, 8, Math.PI * 0.2, Math.PI * 1.8);
       ctx.stroke();
-      if (vis === 'longchange') {
+      if (vis === 'adjust') {
         ctx.rotate(0.6);
         ctx.beginPath();
         ctx.arc(16, -10, 7, 0, Math.PI * 2);
@@ -760,7 +790,10 @@
       ctx.fill();
     } else if (vis === 'micro' || vis === 'jam' || vis === 'slow') {
       D.text(ctx, vis === 'slow' ? '◔' : '!', 0, 8 + bob, { size: 22, weight: 800, color, align: 'center' });
-    } else if (vis === 'material' || vis === 'pallets' || vis === 'warehouse') {
+    } else if (vis === 'reject') {
+      D.text(ctx, '✖', 0, 8 + bob, { size: 20, weight: 800, color, align: 'center' });
+    } else if (vis === 'material') {
+      // Camión: falta material de envase.
       ctx.fillRect(-12, -6 + bob, 18, 12);
       ctx.fillRect(6, -2 + bob, 7, 8);
       ctx.fillStyle = '#140c09';
@@ -768,16 +801,11 @@
       ctx.arc(-6, 7 + bob, 3, 0, Math.PI * 2);
       ctx.arc(8, 7 + bob, 3, 0, Math.PI * 2);
       ctx.fill();
-    } else if (vis === 'quality') {
-      ctx.beginPath();
-      ctx.moveTo(-4, -12);
-      ctx.lineTo(4, -12);
-      ctx.lineTo(4, -3);
-      ctx.lineTo(11, 10);
-      ctx.lineTo(-11, 10);
-      ctx.lineTo(-4, -3);
-      ctx.closePath();
+    } else if (vis === 'beer') {
+      // Tanque de cerveza vacío.
+      D.roundRect(ctx, -9, -13, 18, 26, 6);
       ctx.stroke();
+      ctx.fillRect(-6, 6, 12, 4);
     } else if (vis === 'utility') {
       D.roundRect(ctx, -6, -12, 12, 24, 5);
       ctx.fill();
@@ -787,11 +815,20 @@
         ctx.arc(-8 + i * 6, -6 + ((t * 20 + i * 7) % 16), 3, 0, Math.PI * 2);
         ctx.stroke();
       }
+    } else if (vis === 'nostaff') {
+      // Persona ausente.
+      ctx.beginPath();
+      ctx.arc(0, -8, 5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-8, 12);
+      ctx.quadraticCurveTo(0, -2, 8, 12);
+      ctx.stroke();
     } else {
-      // Sin personal / sin programa / cambio de plan: calendario.
+      // Sin programar / aguas arriba: calendario.
       ctx.strokeRect(-12, -10, 24, 20);
       ctx.fillRect(-12, -10, 24, 6);
-      if (vis === 'replan') D.text(ctx, '!', 0, 9, { size: 13, weight: 800, color, align: 'center' });
+      if (vis === 'upstream') D.text(ctx, '!', 0, 9, { size: 13, weight: 800, color, align: 'center' });
     }
     ctx.restore();
   }
@@ -800,19 +837,19 @@
     const rc = PANEL.center;
     const sh = s.shift;
     panelTitle(ctx, rc, 'REPORTE DE FIN DE TURNO', 'lo que falló');
-    D.text(ctx, '¿Qué KPI cae primero con cada pérdida?', rc.x + 16, rc.y + 58, { size: 16, weight: 800, color: ACCENT });
+    D.text(ctx, '¿Qué KPI la detecta primero?', rc.x + 16, rc.y + 58, { size: 16, weight: 800, color: ACCENT });
     sh.losses.forEach((l, i) => {
       const rep = sh.reports[i];
       const y = rc.y + 74 + i * 84;
       const cur = sh.phase === 'report' && i === sh.cursor;
       const ans = sh.answers[i];
-      const truth = K.CATS[l.def.cat].kpi;
+      const truth = kpiOfCat(l.def.cat);
       D.panel(ctx, rc.x + 10, y, rc.w - 20, 76, { fill: cur ? '#16262c' : '#1a1412', edge: cur ? ACCENT : '#2e2420', radius: 8, glow: cur ? ACCENT : null });
       if (cur) D.text(ctx, '▶', rc.x + 22, y + 30, { size: 16, weight: 800, color: ACCENT });
       ctx.font = D.font(15, 700);
       const lines = D.wrap(ctx, reportText(s, rep), rc.w - 150).slice(0, 2);
       lines.forEach((ln, j) => D.text(ctx, ln, rc.x + 40, y + 24 + j * 18, { size: 15, weight: 700, color: rep.verified || rep.status === 'ok' ? T.ink : '#ffd9a8' }));
-      D.text(ctx, fmtH(l.hours), rc.x + 40, y + 66, { size: 12, color: T.dim, family: D.MONO });
+      D.text(ctx, l.def.noHours ? 'dato' : fmtH(l.hours), rc.x + 40, y + 66, { size: 12, color: T.dim, family: D.MONO });
       const badge = reportBadge(s, rep);
       if (badge) D.text(ctx, badge[0], rc.x + 100, y + 66, { size: 11, weight: 700, color: badge[1] });
       // Respuesta.
@@ -820,8 +857,8 @@
       if (ans) {
         const ok = ans === truth;
         D.panel(ctx, ax - 10, y + 12, 66, 52, { fill: ok ? T.okDark : '#4a1410', edge: ok ? T.ok : T.red, radius: 8 });
-        D.text(ctx, ok ? `✔ ${ans}` : `✖ ${ans}`, ax + 23, y + 34, { size: 15, weight: 800, color: ok ? T.ok : T.red, align: 'center' });
-        if (!ok) D.text(ctx, `era ${truth}`, ax + 23, y + 54, { size: 12, weight: 700, color: T.ink, align: 'center' });
+        D.text(ctx, `${ok ? '✔' : '✖'} ${ans === 'TODOS' ? '3' : ans}`, ax + 23, y + 34, { size: 15, weight: 800, color: ok ? T.ok : T.red, align: 'center' });
+        if (!ok) D.text(ctx, `era ${truth === 'TODOS' ? 'los 3' : truth}`, ax + 23, y + 54, { size: 12, weight: 700, color: T.ink, align: 'center' });
       } else {
         D.text(ctx, cur ? '?' : '·', ax + 23, y + 46, { size: 26, weight: 800, color: cur ? ACCENT : T.faint, align: 'center' });
       }
@@ -836,8 +873,8 @@
     const cx = rc.x + rc.w / 2;
     const cy = rc.y + 200;
     return {
-      GLY: { x: cx - w / 2, y: cy - h - 40, w, h },
-      LEF: { x: rc.x + 14, y: cy - h / 2, w, h },
+      LEF: { x: cx - w / 2, y: cy - h - 40, w, h },
+      GLY: { x: rc.x + 14, y: cy - h / 2, w, h },
       OSE: { x: rc.x + rc.w - 14 - w, y: cy - h / 2, w, h },
       OK: { x: cx - w / 2, y: cy + 40, w, h },
     };
@@ -847,53 +884,62 @@
     const sh = s.shift;
     if (s.mode === 'kpi') {
       return {
-        GLY: ['GLY', 'planificación / utilización', K.CATS.plan.color],
-        LEF: ['LEF', 'pérdida externa', K.CATS.ext.color],
-        OSE: ['OSE', 'pérdida interna', K.CATS.int.color],
+        LEF: ['LEF', 'interna de la línea', K.CATS.int.color],
+        GLY: ['GLY', 'planificada o externa', K.CATS.pe.color],
+        OSE: ['OSE', 'no programada', K.CATS.ns.color],
+        OK: ['LOS TRES', 'error de dato', K.CATS.all.color],
       };
     }
     if (sh.phase === 'run') {
       return {
-        GLY: ['PLANIFICACIÓN', 'todo bajo · cae el GLY', K.CATS.plan.color],
-        LEF: ['EXTERNO', 'GLY alto · LEF bajo', K.CATS.ext.color],
-        OSE: ['INTERNO', 'LEF alto · OSE bajo', K.CATS.int.color],
+        LEF: ['INTERNO', 'cae el LEF y arrastra', K.CATS.int.color],
+        GLY: ['PLANIF. / EXTERNA', 'LEF alto · GLY bajo', K.CATS.pe.color],
+        OSE: ['SIN PROGRAMAR', 'GLY alto · OSE bajo', K.CATS.ns.color],
         OK: ['EXCELENTE', 'todo alto (≥ 90 %)', T.ok],
       };
     }
-    // Acción: con quién se ataca la pérdida principal.
-    const [a, b, c] = sh.options;
+    // Acción: con quién se ataca la pérdida principal (izquierda, arriba, derecha).
     const lab = (o) => (o === 'none' ? ['ESTANDARIZAR', 'y mantener lo que funcionó', T.ok] : [ownerShort(o), ownerHint(o), ACCENT]);
-    return { LEF: lab(a), GLY: lab(b), OSE: lab(c) };
+    const out = {};
+    for (const [slot, def] of Object.entries(SLOTS)) if (def.pos in POS_INDEX) out[slot] = lab(sh.options[POS_INDEX[def.pos]]);
+    return out;
   }
 
   function ownerShort(o) {
-    return { planificacion: 'PLANIFICACIÓN', abastecimiento: 'ABASTECIMIENTO', calidad: 'CALIDAD', servicios: 'SERVICIOS', mantenimiento: 'MANTENIMIENTO', operacion: 'OPERACIÓN' }[o];
+    return { mantenimiento: 'MANTENIMIENTO', operacion: 'OPERACIÓN', smed: 'EQUIPO SMED', calidad: 'CALIDAD', abastecimiento: 'ABASTECIMIENTO', elaboracion: 'ELABORACIÓN', utilities: 'UTILITIES', planificacion: 'PLANIFICACIÓN' }[o];
   }
 
   function ownerHint(o) {
-    return { planificacion: 'programa y dotación', abastecimiento: 'logística y materiales', calidad: 'liberación del producto', servicios: 'industriales: CO₂, vapor', mantenimiento: 'averías y fallas', operacion: 'en el poder de la línea' }[o];
+    return {
+      mantenimiento: 'fallas y preventivos',
+      operacion: 'en el poder de la línea',
+      smed: 'cambios de formato más cortos',
+      calidad: 'frecuencia y duración del CIP',
+      abastecimiento: 'materiales de envase',
+      elaboracion: 'filtración, bodega, cocimiento',
+      utilities: 'energía, vapor, CO₂, aire',
+      planificacion: 'programa, ventas y capacidad',
+    }[o];
   }
 
   function drawDecision(s, ctx) {
     const rc = PANEL.dec;
     const sh = s.shift;
-    let title = s.mode === 'kpi' ? '¿QUÉ KPI CAE?' : sh.phase === 'run' ? 'DIAGNÓSTICO DEL TURNO' : '¿CON QUIÉN LA ATACAS?';
+    let title = s.mode === 'kpi' ? '¿QUÉ KPI LA DETECTA?' : sh.phase === 'run' ? 'DIAGNÓSTICO DEL TURNO' : '¿CON QUIÉN LA ATACAS?';
     if (sh.phase === 'done') title = 'RESULTADO DEL TURNO';
     panelTitle(ctx, rc, title);
     let help = '';
     if (s.mode === 'diag') help = sh.phase === 'run' ? '¿Dónde está la gran caída? Puedes responder antes de que acabe el turno.' : sh.phase === 'action' ? 'Elige con quién atacar la pérdida principal.' : '';
-    else help = sh.phase === 'run' ? 'Observa la línea: el reporte llega al final del turno.' : sh.phase === 'report' ? 'Clasifica la pérdida marcada en el reporte.' : '';
+    else help = sh.phase === 'run' ? 'Observa la línea: el reporte llega al final del turno.' : sh.phase === 'report' ? 'Clasifica la pérdida marcada: ¿qué KPI la detecta primero?' : '';
     if (help) D.paragraph(ctx, help, rc.x + 16, rc.y + 56, rc.w - 32, { size: 13, color: T.dim });
 
     const labels = slotLabels(s);
     const active = (s.mode === 'diag' && (sh.phase === 'run' || sh.phase === 'action')) || (s.mode === 'kpi' && sh.phase === 'report');
-    const rects = diamond();
-    for (const [slot, rcB] of Object.entries(rects)) {
+    for (const [slot, rcB] of Object.entries(diamond())) {
       const lab = labels[slot];
       if (!lab) continue;
-      const on = active;
-      D.panel(ctx, rcB.x, rcB.y, rcB.w, rcB.h, { fill: '#1a1412', edge: on ? lab[2] : '#2e2420', radius: 10, glow: on ? lab[2] : null });
-      ctx.globalAlpha = on ? 1 : 0.45;
+      D.panel(ctx, rcB.x, rcB.y, rcB.w, rcB.h, { fill: '#1a1412', edge: active ? lab[2] : '#2e2420', radius: 10, glow: active ? lab[2] : null });
+      ctx.globalAlpha = active ? 1 : 0.45;
       const cw = D.control(ctx, SLOTS[slot], rcB.x + 10, rcB.y + rcB.h / 2, { size: 13, color: lab[2] });
       ctx.font = D.font(16, 800);
       let main = lab[0];
@@ -935,58 +981,58 @@
     ctx.fillRect(0, 0, D.VIEW.width, D.VIEW.height);
     D.panel(ctx, 40, 30, 1200, 660, { fill: '#f2e3c6', edge: T.brass, radius: 12 });
     const ink = '#2a170d';
-    D.text(ctx, 'GLY, LEF Y OSE: CÓMO SE RELACIONAN', 70, 74, { size: 26, weight: 800, color: '#3a1d0c' });
-    // Árbol de filtros.
+    D.text(ctx, 'LEF, GLY Y OSE: MISMO NUMERADOR, DISTINTO DENOMINADOR', 70, 72, { size: 24, weight: 800, color: '#3a1d0c' });
+    // Árbol de tiempos.
     const boxes = [
-      ['HORAS TOTALES DEL TURNO', '12 h', '#7a5030'],
-      ['− planificación / utilización', 'sin personal, sin programa, paradas programadas', K.CATS.plan.color],
-      ['GLY', '¿qué parte del tiempo total aprovecho?', '#3a1d0c'],
-      ['− pérdidas externas', 'materiales, Calidad, pallets, servicios, logística, planificación incorrecta', K.CATS.ext.color],
-      ['LEF', 'cuando debía producir, ¿cuánto operó?', '#3a1d0c'],
-      ['− pérdidas internas', 'averías, fallas eléctricas, microparadas, atascos, operación lenta, cambios mal ejecutados', K.CATS.int.color],
-      ['OSE', '¿qué parte fue producción efectiva?', '#3a1d0c'],
+      ['TIEMPO TOTAL', 'el calendario completo → denominador del OSE', '#7a5030'],
+      ['− no programado', 'demanda menor, turnos apagados, portafolio, aguas arriba, overhaul, feriados', K.CATS.ns.color],
+      ['TIEMPO PROGRAMADO', 'denominador del GLY', '#3a1d0c'],
+      ['− planificadas y externas', 'cambios dentro del estándar, CIP, preventivo · cerveza, materiales, servicios', K.CATS.pe.color],
+      ['LET · TIEMPO DE OPERACIÓN', 'denominador del LEF', '#3a1d0c'],
+      ['− internas de la línea', 'fallas, microparadas, velocidad, rechazos, balance, ajustes', K.CATS.int.color],
+      ['EPT · PRODUCCIÓN EFECTIVA', 'numerador común de los tres KPIs', '#3a1d0c'],
     ];
     boxes.forEach(([a, b, c], i) => {
-      const y = 100 + i * 50;
-      const kpi = i % 2 === 0 && i > 0;
-      D.panel(ctx, 70, y, 560, 42, { fill: kpi ? '#fff4e2' : '#f7ead4', edge: c, radius: 8 });
-      D.text(ctx, a, 84, y + 19, { size: kpi ? 20 : 15, weight: 800, color: c });
+      const y = 92 + i * 50;
+      const strong = i % 2 === 0;
+      D.panel(ctx, 70, y, 560, 42, { fill: strong ? '#fff4e2' : '#f7ead4', edge: c, radius: 8 });
+      D.text(ctx, a, 84, y + 19, { size: strong ? 17 : 15, weight: 800, color: c });
       D.paragraph(ctx, b, 84, y + 35, 530, { size: 12, color: ink, maxLines: 1 });
     });
-    D.text(ctx, 'Siempre: GLY ≥ LEF ≥ OSE', 70, 466, { size: 20, weight: 800, color: '#3a1d0c' });
-    D.paragraph(ctx, 'Convención del juego (la de los ejemplos del material): las tres métricas se calculan sobre las 12 h del turno y cada una descuenta un nivel más de pérdidas.', 70, 490, 560, { size: 13, color: '#7a5030' });
+    D.text(ctx, 'LEF = EPT / LET  ·  GLY = EPT / programado  ·  OSE = EPT / total', 70, 458, { size: 15, weight: 800, color: '#3a1d0c' });
+    D.text(ctx, 'Siempre: LEF ≥ GLY ≥ OSE', 70, 484, { size: 20, weight: 800, color: '#3a1d0c' });
+    D.paragraph(ctx, 'Toda pérdida que baja el EPT baja los tres KPIs: lo que cambia es cuál la detecta primero. Ninguna pérdida interna afecta "solo al LEF".', 70, 508, 560, { size: 13, color: '#7a5030' });
 
-    // Regla rápida y ejemplos.
-    D.text(ctx, 'REGLA RÁPIDA DEL SUPERVISOR', 670, 110, { size: 16, weight: 800, color: '#3a1d0c' });
+    D.text(ctx, 'REGLA RÁPIDA DEL SUPERVISOR', 670, 104, { size: 16, weight: 800, color: '#3a1d0c' });
     const rules = [
-      ['GLY alto · LEF bajo · OSE bajo', 'problema externo', K.CATS.ext.color],
-      ['GLY alto · LEF alto · OSE bajo', 'problema interno (de la línea)', K.CATS.int.color],
-      ['GLY bajo · LEF bajo · OSE bajo', 'planificación / utilización', K.CATS.plan.color],
+      ['LEF bajo (arrastra a GLY y OSE)', 'problema interno', K.CATS.int.color],
+      ['LEF alto · GLY bajo', 'planificadas o externas', K.CATS.pe.color],
+      ['LEF y GLY altos · OSE bajo', 'capacidad sin programar', K.CATS.ns.color],
     ];
     rules.forEach(([a, b, c], i) => {
-      D.text(ctx, a, 670, 140 + i * 26, { size: 14, weight: 700, color: ink });
-      D.text(ctx, `→ ${b}`, 1210, 140 + i * 26, { size: 14, weight: 800, color: c, align: 'right' });
+      D.text(ctx, a, 670, 132 + i * 24, { size: 14, weight: 700, color: ink });
+      D.text(ctx, `→ ${b}`, 1210, 132 + i * 24, { size: 14, weight: 800, color: c, align: 'right' });
     });
-    D.text(ctx, 'EJEMPLOS (TURNO DE 12 h)', 670, 240, { size: 16, weight: 800, color: '#3a1d0c' });
-    ['', 'GLY', 'LEF', 'OSE', 'Diagnóstico'].forEach((h, i) => D.text(ctx, h, 670 + [0, 100, 190, 280, 370][i], 268, { size: 13, weight: 800, color: '#7a5030' }));
+    D.text(ctx, 'EJEMPLOS (TURNO DE 12 h)', 670, 222, { size: 16, weight: 800, color: '#3a1d0c' });
+    ['', 'LEF', 'GLY', 'OSE', 'Diagnóstico'].forEach((h, i) => D.text(ctx, h, 670 + [0, 90, 180, 270, 360][i], 248, { size: 13, weight: 800, color: '#7a5030' }));
     K.EXAMPLES.forEach((ex, i) => {
       const k = K.kpis([
-        { def: { cat: 'plan' }, start: 0, hours: ex.plan },
-        { def: { cat: 'ext' }, start: 1, hours: ex.ext },
-        { def: { cat: 'int' }, start: 4, hours: ex.int },
+        { def: { cat: 'ns' }, start: 0, hours: ex.ns },
+        { def: { cat: 'pe' }, start: 4, hours: ex.pe },
+        { def: { cat: 'int' }, start: 8, hours: ex.int },
       ]);
-      const y = 296 + i * 26;
+      const y = 274 + i * 24;
       D.text(ctx, ex.name, 670, y, { size: 14, weight: 700, color: ink });
-      [k.gly, k.lef, k.ose].forEach((v, j) => D.text(ctx, K.pct(v), 670 + [100, 190, 280][j], y, { size: 14, weight: 700, color: ink, family: D.MONO }));
-      D.text(ctx, ex.diag, 1040, y, { size: 14, weight: 700, color: ink });
+      [k.lef, k.gly, k.ose].forEach((v, j) => D.text(ctx, K.pct(v), 670 + [90, 180, 270][j], y, { size: 14, weight: 700, color: ink, family: D.MONO }));
+      D.text(ctx, ex.diag, 1030, y, { size: 14, weight: 700, color: ink });
     });
-    D.text(ctx, '¿QUÉ ESTÁ EN TU PODER?', 670, 400, { size: 16, weight: 800, color: '#3a1d0c' });
-    ['int', 'ext', 'plan'].forEach((c, i) => {
-      D.text(ctx, `${K.CATS[c].short}:`, 670, 428 + i * 44, { size: 14, weight: 800, color: K.CATS[c].color });
-      D.paragraph(ctx, K.CATS[c].power, 770, 428 + i * 44, 440, { size: 13, color: ink, maxLines: 2 });
+    D.text(ctx, '¿QUÉ ESTÁ EN TU PODER?', 670, 392, { size: 16, weight: 800, color: '#3a1d0c' });
+    ['int', 'pe', 'ns'].forEach((c, i) => {
+      D.text(ctx, `${K.CATS[c].kpi}:`, 670, 418 + i * 44, { size: 14, weight: 800, color: K.CATS[c].color });
+      D.paragraph(ctx, K.CATS[c].power, 720, 418 + i * 44, 490, { size: 13, color: ink, maxLines: 2 });
     });
-    D.text(ctx, 'Analogía: GLY = horas que la autopista estuvo abierta · LEF = abierta sin bloqueos externos · OSE = además, con los autos a velocidad normal.', 640, 590, { size: 13, weight: 600, color: '#7a3010', align: 'center' });
-    D.hints(ctx, [[CTRL.help, 'volver al juego (el turno está en pausa)']], 640, 640, { size: 15, align: 'center', ink, color: '#c4501a' });
+    D.paragraph(ctx, 'Ojo con los datos: una velocidad nominal mal configurada infla o desinfla los tres KPIs; una falla interna registrada como externa sube el LEF artificialmente sin cambiar el GLY.', 670, 556, 540, { size: 13, weight: 600, color: '#7a3010', maxLines: 3 });
+    D.hints(ctx, [[CTRL.help, 'volver al juego (el turno está en pausa)']], 640, 650, { size: 15, align: 'center', ink, color: '#c4501a' });
   }
 
   // ------------------------------------------------------------- Reporte
@@ -996,6 +1042,12 @@
     const score = st.max ? Math.max(0, Math.min(100, Math.round((100 * st.points) / st.max))) : 0;
     const rank = D.rankFor(score);
     const conf = Object.entries(st.confusions).sort((a, b) => b[1] - a[1])[0];
+    const kpiRows = ['LEF', 'GLY', 'OSE', 'TODOS']
+      .filter((k) => k !== 'TODOS' || st.items.TODOS.total > 0)
+      .map((kpi) => {
+        const label = kpi === 'TODOS' ? 'Aciertos "los tres" (error de dato)' : `Aciertos ${kpi} (${K.CATS[K.KPIS[kpi].cat].short.toLowerCase()})`;
+        return [label, `${st.items[kpi].ok} de ${st.items[kpi].total}`, st.items[kpi].ok === st.items[kpi].total ? T.ok : T.warn];
+      });
     const rows =
       s.mode === 'diag'
         ? [
@@ -1007,13 +1059,14 @@
             ['Puntuación de Calidad', `${score}/100`, D.rankColor(rank)],
           ]
         : [
-            ...['GLY', 'LEF', 'OSE'].map((kpi) => [`Aciertos ${kpi} (${K.CATS[K.KPIS[kpi].cat].short.toLowerCase()})`, `${st.items[kpi].ok} de ${st.items[kpi].total}`, st.items[kpi].ok === st.items[kpi].total ? T.ok : T.warn]),
+            ...kpiRows,
             ['Llamadas para verificar', `${st.jokersUsed} de ${s.cfg.jokers}`, T.ink],
             ['Confusión más frecuente', conf ? `${conf[0]} (×${conf[1]})` : 'ninguna', conf ? T.red : T.ok],
             ['Puntuación de Calidad', `${score}/100`, D.rankColor(rank)],
           ];
-    const total = ['GLY', 'LEF', 'OSE'].reduce((a, k) => a + st.items[k].ok, 0);
-    const n = ['GLY', 'LEF', 'OSE'].reduce((a, k) => a + st.items[k].total, 0);
+    const keys = Object.keys(st.items);
+    const total = keys.reduce((a, k) => a + st.items[k].ok, 0);
+    const n = keys.reduce((a, k) => a + st.items[k].total, 0);
     return {
       score,
       rank,
@@ -1026,9 +1079,9 @@
   // ------------------------------------------------------------- Menú
 
   function icon(ctx, cx, cy, size, t) {
-    // Tres barras GLY ≥ LEF ≥ OSE.
+    // Tres barras LEF ≥ GLY ≥ OSE.
     const vals = [0.95, 0.8 + 0.04 * Math.sin(t * 2), 0.66 + 0.05 * Math.sin(t * 2 + 1)];
-    const colors = [T.ok, '#ffb347', '#ff6b5a'];
+    const colors = [T.ok, '#ffb347', '#b48cff'];
     const w = size * 0.8;
     vals.forEach((v, i) => {
       const y = cy - size * 0.3 + i * size * 0.24;
@@ -1038,17 +1091,17 @@
       ctx.fillStyle = colors[i];
       D.roundRect(ctx, cx - w / 2, y, w * v, size * 0.15, 5);
       ctx.fill();
-      D.text(ctx, ['GLY', 'LEF', 'OSE'][i], cx - w / 2 - 4, y + size * 0.12, { size: size * 0.11, weight: 800, color: T.dim, align: 'right' });
+      D.text(ctx, ROWS[i], cx - w / 2 - 4, y + size * 0.12, { size: size * 0.11, weight: 800, color: T.dim, align: 'right' });
     });
   }
 
-  PF.Admin = { MODES, SHIFTS, SHIFT_S, DIFF };
+  PF.Admin = { MODES, SHIFTS, SHIFT_S, DIFF, SLOTS };
   PF.Games = PF.Games || [];
   PF.Games.push({
     id: 'admin',
     order: 6,
     title: 'Supervisor de Turno',
-    subtitle: 'GLY · LEF · OSE',
+    subtitle: 'LEF · GLY · OSE',
     tagline: 'Administra 6 turnos: lee el tablero y descubre dónde se pierden las horas.',
     accent: ACCENT,
     padRaw: true,
@@ -1063,21 +1116,21 @@
     },
     icon,
     howTo: [
-      '6 turnos de 12 h, cada uno en 20 s (2 min en total). GLY ≥ LEF ≥ OSE: cada uno descuenta más pérdidas.',
-      'Diagnóstico: ¿la gran caída es de planificación, externa, interna… o el turno fue excelente? Luego, ¿con quién la atacas?',
-      '¿Qué KPI cae?: al final del turno clasifica cada pérdida del reporte en GLY, LEF u OSE.',
+      '6 turnos de 12 h, cada uno en 20 s (2 min en total). Mismo numerador (EPT): LEF ≥ GLY ≥ OSE.',
+      'Diagnóstico: ¿la gran caída es interna, planificada/externa, sin programar… o el turno fue excelente? Luego, ¿con quién la atacas?',
+      '¿Qué KPI cae?: al final del turno clasifica cada pérdida del reporte por el KPI que la detecta primero.',
       'Ver la línea muestra la causa real; Llamar y verificar corrige reportes dudosos (usos limitados).',
     ],
     controls: [
       ['↑ ← → ↓', 'responder (rombo)', ['y', 'x', 'b', 'a']],
       ['C', 'llamar y verificar', 'lb'],
       ['V', 'ver la línea / reportes', 'rb'],
-      ['H', 'ayuda: GLY, LEF y OSE', 'select'],
+      ['H', 'ayuda: LEF, GLY y OSE', 'select'],
     ],
     difficulties: {
       facil: ['Línea y reportes a la vista, con su tipo de pérdida', 'Regla rápida y brechas marcadas', '3 llamadas para verificar'],
-      normal: ['Reportes sin verificar · alterna línea y reportes', 'Señuelos que acercan las brechas', '2 llamadas para verificar'],
-      dificil: ['Reportes equivocados y la línea sin rótulos', 'Siempre hay señuelos y trampas', '1 llamada para verificar'],
+      normal: ['Reportes sin verificar · alterna línea y reportes', 'Señuelos y casos que caen en más de un KPI', '2 llamadas para verificar'],
+      dificil: ['Reportes equivocados y la línea sin rótulos', 'Más trampas, incluidos errores de dato', '1 llamada para verificar'],
     },
     create,
   });

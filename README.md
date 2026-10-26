@@ -26,7 +26,7 @@ Para que no estorben, los mensajes van **a un lado**:
 | 3 | **El Cazador de Riesgos** · Recorrido UV | Línea a oscuras: encontrar 5 focos de contaminación con linterna UV y limpiarlos con la herramienta correcta. |
 | 4 | **Línea en Paro** · Decisiones Bajo Presión | Aplicar el plan de reacción según cuánto lleva parada la línea, sin ceder a la presión de arrancar ya. |
 | 5 | **Control de UP** · Unidades de Pasteurización | Panel de control sin muñeco: mantener cada lote entre 24 y 30 UP (ideal 26) con la temperatura y decidir con la llave de paso si va a la llenadora o al descarte. Duración ajustable de 40 a 60 s. |
-| 6 | **Supervisor de Turno** · GLY · LEF · OSE | Administración del turno: leer el tablero de KPI para descubrir dónde se pierden las horas (modo *Diagnóstico*) o clasificar cada pérdida del reporte por el KPI que afecta (modo *¿Qué KPI cae?*). 6 turnos de 20 s: 2 min máximo. |
+| 6 | **Supervisor de Turno** · LEF · GLY · OSE | Administración del turno: leer el tablero de LEF, GLY y OSE para descubrir dónde se pierden las horas (modo *Diagnóstico*) o clasificar cada pérdida del reporte por el KPI que la detecta primero (modo *¿Qué KPI cae?*). 6 turnos de 20 s: 2 min máximo. |
 
 ## Cómo jugar
 
@@ -198,52 +198,66 @@ referencia (1 UP por minuto) y 1,393 el factor derivado de z = 10 °C.
 
 ### 6 · Supervisor de Turno
 
-El objetivo es aprender cómo se relacionan GLY, LEF y OSE, qué las afecta y qué
+El objetivo es aprender cómo se relacionan LEF, GLY y OSE, qué las afecta y qué
 factores están en el poder de la línea. Cada partida son **6 turnos de 12 h**
 simulados en **20 s** cada uno (2 min como máximo). El modo se elige en la pantalla de
 inicio, junto a la dificultad.
 
-**Convención (la de los ejemplos del material):** las tres métricas se calculan
-sobre las horas totales del turno, y cada una descuenta un nivel más de pérdidas.
+**Modelo.** Las tres métricas comparten el mismo numerador, el **EPT** (tiempo de
+producción efectiva), y difieren en el denominador:
 
-| KPI | Fórmula | Pérdidas que descuenta | Ejemplos |
-|---|---|---|---|
-| GLY | (T − planificación) / T | planificación / utilización | sin personal, sin programa, cambio de formato programado, CIP y preventivo programados |
-| LEF | (T − planificación − externas) / T | + externas (otra área) | materiales, espera de Calidad, pallets, servicios industriales, logística, planificación incorrecta |
-| OSE | (T − planificación − externas − internas) / T | + internas (la línea) | averías, fallas eléctricas, microparadas, atascos, operación lenta, cambios mal ejecutados |
+| KPI | Fórmula | La detecta primero |
+|---|---|---|
+| LEF | EPT / LET (tiempo de operación de la línea) | pérdidas **internas** de la línea |
+| GLY | EPT / tiempo programado | **paradas planificadas** y **causas externas**, que el LEF excluye |
+| OSE | EPT / tiempo total | tiempo **no programado**, que el GLY no ve |
 
-Siempre GLY ≥ LEF ≥ OSE. Con los turnos A, B y C del material, el juego da exactamente
-95,8 / 94,2 / 93,3 %, 95,8 / 79,2 / 77,5 % y 95,8 / 94,2 / 77,5 % (hay una prueba que
-lo comprueba).
+Siempre **LEF ≥ GLY ≥ OSE**. Toda pérdida que baja el EPT baja los tres KPIs:
+ninguna pérdida interna afecta "solo al LEF". Lo que cambia es cuál la detecta
+primero.
 
-> El árbol del material pone las paradas programadas *debajo* del GLY, pero su cálculo
-> (y los tres ejemplos) las descuenta *en* el GLY. El juego sigue el cálculo. Conviene
-> confirmar la definición con el manual de la planta: hay empresas que usan otro
-> denominador u otro orden.
+**Catálogo de pérdidas** (`src/content/kpi.js`): los 24 ítems de la investigación del
+área de envasado.
 
-**Modo Diagnóstico de turno.** El tablero muestra GLY, LEF y OSE en vivo, acumulados
-hasta la hora actual. Cuando ves dónde está la gran caída, respondes en el rombo de
-botones, que imita la cara del mando:
+- **LEF:** fallas mecánicas o eléctricas, microparadas, velocidad bajo la nominal,
+  rechazos, mal balance de línea, ajustes y recuperación.
+- **GLY:** cambios de formato dentro del estándar, CIP, mantenimiento planificado,
+  falta de cerveza, falta de materiales de envase, fallas de servicios.
+- **OSE:** demanda menor a la capacidad, turnos no programados, portafolio cargado
+  en otra línea, restricciones aguas arriba, overhauls, feriados.
+- **Los que pueden caer en más de un KPI (19-22)** se separan en variantes con una
+  sola respuesta. Ejemplo: ausentismo, según si la línea corre más lenta (LEF), se
+  detiene (GLY) o el turno no se programa (OSE).
+- **Velocidad nominal mal configurada (23):** se responde **"los tres"**.
+- **Falla interna registrada como externa (24):** pregunta qué KPI queda
+  distorsionado: el LEF, que sube artificialmente.
+
+**Modo Diagnóstico de turno.** El tablero muestra LEF, GLY y OSE en vivo, acumulados
+hasta la hora actual. Cuando ves dónde está la gran brecha, respondes en el rombo de
+botones, que imita la cara del mando. Este modo usa solo los ítems de un KPI (1-18).
 
 | Botón | Respuesta | Patrón |
 |---|---|---|
-| ▲ (↑ / △ / Y) | Planificación | GLY, LEF y OSE bajos |
-| ◀ (← / □ / X) | Externo | GLY alto, LEF y OSE bajos |
-| ▶ (→ / ○ / B) | Interno | GLY y LEF altos, OSE bajo |
+| ▲ (↑ / △ / Y) | Interno | LEF bajo (arrastra a GLY y OSE) |
+| ◀ (← / □ / X) | Planificada / externa | LEF alto, GLY bajo |
+| ▶ (→ / ○ / B) | Sin programar | LEF y GLY altos, OSE bajo |
 | ▼ (↓ / ✕ / A) | Excelente | todo alto (≥ 90 %) |
 
-Después viene la segunda pregunta, **"¿con quién la atacas?"**: Mantenimiento u
-Operación (en el poder de la línea); Abastecimiento, Calidad o Servicios (se escala);
-Planificación; o estandarizar si el turno fue excelente. Diagnóstico +100, acción +50.
+Después viene la segunda pregunta, **"¿con quién la atacas?"**:
+
+- Mantenimiento u Operación (en el poder de la línea).
+- Equipo SMED, Calidad o Mantenimiento, para las paradas planificadas.
+- Abastecimiento, Elaboración o Utilities, para las causas externas.
+- Planificación y ventas, para la capacidad sin programar.
+- Estandarizar, si el turno fue excelente.
+
+Diagnóstico +100, acción +50.
 
 **Modo ¿Qué KPI cae?** El turno corre unos segundos con la línea a la vista. Al final
-llega el **reporte de fin de turno** con lo que falló, y cada pérdida se clasifica por
-el primer KPI que la ve: GLY, LEF u OSE (+50 cada una). Hay pares trampa a propósito:
-
-- *Cambio de formato programado* (GLY) frente a *cambio de formato excedido* (OSE).
-- *Sin programa* (GLY) frente a *cambio de plan a última hora* (LEF).
-- *Espera de Calidad* (LEF, no interna).
-- *Velocidad reducida* (OSE aunque la línea no pare).
+llega el **reporte de fin de turno** y cada pérdida se clasifica por el primer KPI que
+la detecta, con el mismo rombo: ▲ LEF, ◀ GLY, ▶ OSE y ▼ "los tres" (error de dato).
+Cada acierto suma +50. En Normal y Difícil aparecen los ítems que pueden caer en más
+de un KPI; Difícil incluye también los errores de dato.
 
 **Herramientas y dificultad.** Los KPI se calculan siempre con las causas reales: los
 reportes pueden mentir, los números no.
@@ -254,13 +268,13 @@ reportes pueden mentir, los números no.
 - **Fácil:** línea y reportes a la vista con su tipo de pérdida, la regla rápida y
   las brechas marcadas en el tablero.
 - **Normal:** reportes sin verificar, la línea y los reportes se alternan, y hay
-  señuelos que acercan las brechas.
-- **Difícil:** reportes equivocados, la línea sin rótulos, y siempre hay señuelos y
-  trampas.
+  señuelos.
+- **Difícil:** reportes equivocados, la línea sin rótulos y más trampas.
 
-La ayuda (H / SHARE / VIEW) pausa el turno y explica el árbol de las métricas, la regla
-rápida, los turnos A, B y C, y qué está en el poder de cada uno. El reporte final
-muestra los aciertos (por KPI en el segundo modo) y la confusión más frecuente.
+La ayuda (H / SHARE / VIEW) pausa el turno y explica el árbol de tiempos (total →
+programado → LET → EPT), la regla rápida, cuatro turnos de ejemplo y qué está en el
+poder de cada uno. El reporte final muestra los aciertos por KPI y la confusión más
+frecuente.
 
 ## Estructura
 
@@ -275,7 +289,7 @@ src/core/bubble.js      burbuja de pensamiento "¡Esto no va así!"
 src/core/world.js       movimiento cenital con colisiones y estaciones
 src/core/screens.js     menú, selector de dificultad, pausa y Reporte de Calidad
 src/content/manual.js   contenido técnico de los juegos (revisar con el manual)
-src/content/kpi.js      GLY, LEF y OSE: fórmulas, catálogo de pérdidas y explicaciones
+src/content/kpi.js      LEF, GLY y OSE: fórmulas (EPT), catálogo de 24 pérdidas y explicaciones
 src/games/*.js          un archivo por juego (CIP, cazador, paro, control de UP, supervisor, adaptador pasteurizadora)
 src/config.js, sim.js, minigames.js, render.js   motor de la Pasteurizadora Flash
 src/audio.js            efectos sintetizados con WebAudio

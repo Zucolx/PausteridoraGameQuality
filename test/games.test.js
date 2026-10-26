@@ -294,22 +294,54 @@ test('Mandos: detección PS/Xbox, flancos y traducción a teclas', () => {
 
 const KPI = PF.KPI;
 const loss = (cat, hours, start = 0) => ({ def: { cat }, hours, start });
+const r1 = (x) => Math.round(x * 1000) / 10;
 
-test('Supervisor: GLY, LEF y OSE reproducen los turnos A, B y C del material', () => {
-  const r = (x) => Math.round(x * 1000) / 10;
-  const A = KPI.kpis([loss('plan', 0.5), loss('ext', 0.2, 1), loss('int', 0.1, 2)]);
-  assert.deepEqual([r(A.gly), r(A.lef), r(A.ose)], [95.8, 94.2, 93.3]);
-  const Bk = KPI.kpis([loss('plan', 0.5), loss('ext', 2.0, 1), loss('int', 0.2, 4)]);
-  assert.deepEqual([r(Bk.gly), r(Bk.lef), r(Bk.ose)], [95.8, 79.2, 77.5]);
-  const Ck = KPI.kpis([loss('plan', 0.5), loss('ext', 0.2, 1), loss('int', 2.0, 2)]);
-  assert.deepEqual([r(Ck.gly), r(Ck.lef), r(Ck.ose)], [95.8, 94.2, 77.5]);
-  assert.equal(KPI.diagnose(A), 'ok');
-  assert.equal(KPI.diagnose(Bk), 'ext');
-  assert.equal(KPI.diagnose(Ck), 'int');
-  assert.equal(KPI.diagnose(KPI.kpis([loss('plan', 3), loss('ext', 0.2, 4)])), 'plan');
+test('Supervisor: mismo numerador (EPT) → LEF ≥ GLY ≥ OSE y cada pérdida la detecta primero un KPI', () => {
+  const base = KPI.kpis([]);
+  assert.deepEqual([base.lef, base.gly, base.ose], [1, 1, 1]);
+  // Interna: la detecta el LEF y arrastra a GLY y OSE (ninguna interna afecta "solo al LEF").
+  const i = KPI.kpis([loss('int', 2)]);
+  assert.ok(i.lef < 1 && i.gly < 1 && i.ose < 1);
+  // Planificada o externa: el LEF la excluye, la detecta el GLY (y baja el OSE).
+  const p = KPI.kpis([loss('pe', 2)]);
+  assert.equal(p.lef, 1);
+  assert.ok(p.gly < 1 && p.ose < 1);
+  // No programada: solo la ve el OSE.
+  const n = KPI.kpis([loss('ns', 2)]);
+  assert.equal(n.lef, 1);
+  assert.equal(n.gly, 1);
+  assert.ok(n.ose < 1);
+  // Ejemplo: 12 h, 3 h sin programar, 0,5 h de cambio estándar, 0,2 h de falla.
+  const d = KPI.kpis([loss('ns', 3), loss('pe', 0.5, 4), loss('int', 0.2, 8)]);
+  assert.deepEqual([r1(d.lef), r1(d.gly), r1(d.ose)], [97.6, 92.2, 69.2]);
+  assert.ok(d.lef >= d.gly && d.gly >= d.ose);
+  assert.equal(KPI.diagnose(d), 'ns');
+  assert.equal(KPI.diagnose(KPI.kpis([loss('int', 2), loss('pe', 0.5, 4)])), 'int');
+  assert.equal(KPI.diagnose(KPI.kpis([loss('pe', 2.5), loss('int', 0.2, 4)])), 'pe');
+  assert.equal(KPI.diagnose(KPI.kpis([loss('pe', 0.5), loss('int', 0.2, 4)])), 'ok');
 });
 
-test('Supervisor: los turnos generados tienen una causa dominante clara y GLY ≥ LEF ≥ OSE', () => {
+test('Supervisor: el catálogo es el de la investigación (24 ítems) y cada pérdida tiene un KPI', () => {
+  const refs = new Set(KPI.LOSSES.map((l) => l.ref));
+  assert.deepEqual([...refs].sort((a, b) => a - b), Array.from({ length: 24 }, (_, i) => i + 1));
+  const kpiOf = (id) => KPI.CATS[KPI.LOSSES.find((l) => l.id === id).cat].kpi;
+  for (const id of ['falla-llenadora', 'microparadas', 'velocidad', 'rechazos', 'balance', 'ajustes']) assert.equal(kpiOf(id), 'LEF', id);
+  for (const id of ['cambio-estandar', 'cip', 'preventivo', 'falta-cerveza', 'materiales', 'servicios']) assert.equal(kpiOf(id), 'GLY', id);
+  for (const id of ['demanda', 'turno-no', 'portafolio', 'aguas-arriba', 'overhaul', 'feriado']) assert.equal(kpiOf(id), 'OSE', id);
+  // Ítems que caen en más de un KPI, separados en variantes concretas.
+  assert.equal(kpiOf('cambio-exceso'), 'LEF');
+  assert.equal(kpiOf('cip-alarga'), 'LEF');
+  assert.equal(kpiOf('proveedor-corre'), 'LEF');
+  assert.equal(kpiOf('proveedor-para'), 'GLY');
+  assert.equal(kpiOf('ausentismo-lento'), 'LEF');
+  assert.equal(kpiOf('ausentismo-para'), 'GLY');
+  assert.equal(kpiOf('ausentismo-noprog'), 'OSE');
+  assert.equal(kpiOf('velocidad-nominal'), 'TODOS');
+  assert.equal(kpiOf('mal-registro'), 'LEF');
+  for (const l of KPI.LOSSES) assert.ok(l.explain && KPI.OWNERS[l.owner], l.id);
+});
+
+test('Supervisor: los turnos generados tienen una causa dominante clara y LEF ≥ GLY ≥ OSE', () => {
   const seen = new Set();
   for (const diff of ['facil', 'normal', 'dificil']) {
     for (let seed = 1; seed <= 40; seed++) {
@@ -318,30 +350,31 @@ test('Supervisor: los turnos generados tienen una causa dominante clara y GLY �
         const sh = s.shift;
         const k = KPI.kpis(sh.losses);
         seen.add(sh.type);
-        assert.ok(k.gly >= k.lef && k.lef >= k.ose);
+        assert.ok(k.lef >= k.gly && k.gly >= k.ose);
         assert.equal(KPI.diagnose(k), sh.type);
+        assert.ok(sh.losses.every((l) => !l.def.mixed && !l.def.noHours), 'el diagnóstico usa ítems de un solo KPI');
+        const g = KPI.gaps(k);
         if (sh.type === 'ok') assert.ok(k.ose >= 0.9, `excelente con OSE ${k.ose}`);
         else {
-          const others = ['plan', 'ext', 'int'].filter((c) => c !== sh.type).map((c) => k[c]);
-          assert.ok(k[sh.type] - Math.max(...others) >= 0.45, 'la causa dominante destaca');
+          const others = ['int', 'pe', 'ns'].filter((c) => c !== sh.type).map((c) => g[c]);
+          assert.ok(g[sh.type] - Math.max(...others) >= 0.045, 'la causa dominante destaca');
         }
-        // Sin solapes y dentro de las 12 h.
         for (let j = 1; j < sh.losses.length; j++) assert.ok(sh.losses[j].start >= sh.losses[j - 1].start + sh.losses[j - 1].hours - 1e-9);
         assert.ok(sh.losses.at(-1).start + sh.losses.at(-1).hours <= 12);
         assert.ok(sh.options.includes(sh.owner));
-        s.shift.t = 20; // siguiente turno
+        s.shift.t = 20;
         s.update(DT, input());
       }
     }
   }
-  assert.deepEqual([...seen].sort(), ['ext', 'int', 'ok', 'plan']);
+  assert.deepEqual([...seen].sort(), ['int', 'ns', 'ok', 'pe']);
 });
 
-test('Supervisor (diagnóstico): acertar suma y equivocarse explica el patrón', () => {
+test('Supervisor (diagnóstico): rombo como la cara del mando y explicación del patrón', () => {
   const s = game('admin').create('normal', { seed: 5, mode: 'diag' });
-  const slotFor = { plan: 'up', ext: 'left', int: 'right', ok: 'down' };
-  const truth = s.shift.type;
-  press(s, slotFor[truth]);
+  // Teclado: ↑ LEF (interno) · ← GLY (planificada/externa) · → OSE (sin programar) · ↓ excelente.
+  const key = { int: 'up', pe: 'left', ns: 'right', ok: 'down' };
+  press(s, key[s.shift.type]);
   assert.equal(s.stats.diagOk, 1);
   assert.equal(s.shift.phase, 'action');
   const pos = ['left', 'up', 'right'][s.shift.options.indexOf(s.shift.owner)];
@@ -350,34 +383,49 @@ test('Supervisor (diagnóstico): acertar suma y equivocarse explica el patrón',
   assert.equal(s.stats.points, 150);
   tick(s, 3);
   assert.equal(s.index, 1);
-  // Respuesta equivocada (con el mando: △/Y = planificación…).
-  const wrong = Object.keys(slotFor).find((c) => c !== s.shift.type);
-  s.update(DT, input({ pad: { pressed: [{ plan: 'y', ext: 'x', int: 'b', ok: 'a' }[wrong]] } }));
+  // Mando: △/Y = LEF · □/X = GLY · ○/B = OSE · ✕/A = excelente.
+  const padBtn = { int: 'y', pe: 'x', ns: 'b', ok: 'a' };
+  const wrong = Object.keys(padBtn).find((c) => c !== s.shift.type);
+  s.update(DT, input({ pad: { pressed: [padBtn[wrong]] } }));
   assert.equal(s.stats.diagOk, 1);
   assert.equal(s.bubble.cur.kind, 'error');
   assert.match(s.bubble.log[0], /Patrón:/);
+  assert.deepEqual(Object.fromEntries(Object.entries(PF.Admin.SLOTS).map(([k, v]) => [k, v.pad])), { LEF: 'y', GLY: 'x', OSE: 'b', OK: 'a' });
 });
 
-test('Supervisor (¿qué KPI cae?): clasifica cada pérdida por el primer KPI que la ve', () => {
+test('Supervisor (¿qué KPI cae?): clasifica por el primer KPI que la detecta, incluso "los tres"', () => {
   const s = game('admin').create('dificil', { seed: 8, mode: 'kpi' });
   tick(s, 8.2);
   assert.equal(s.shift.phase, 'report');
-  assert.ok(s.shift.losses.some((l) => KPI.TRAPS.includes(l.def.id)), 'difícil incluye trampas');
-  const key = { GLY: 'up', LEF: 'left', OSE: 'right' };
+  assert.ok(s.shift.losses.some((l) => l.def.mixed), 'difícil incluye ítems que caen en más de un KPI');
+  const key = { LEF: 'up', GLY: 'left', OSE: 'right', TODOS: 'down' };
   for (const l of s.shift.losses) press(s, key[KPI.CATS[l.def.cat].kpi]);
   assert.equal(s.shift.phase, 'done');
   const n = s.shift.losses.length;
   assert.equal(s.stats.points, 50 * n);
-  assert.equal(s.stats.max, 50 * n);
-  // El reporte final resume aciertos por KPI.
   const rep = s.report();
   assert.match(rep.headline, /clasificaste bien/);
   assert.equal(rep.score, 100);
+  // Con el mando, ✕/A responde "los tres" y explica el error de dato.
+  let found = null;
+  for (let seed = 1; seed < 300 && !found; seed++) {
+    const g = game('admin').create('dificil', { seed, mode: 'kpi' });
+    if (g.shift.losses.some((l) => l.def.id === 'velocidad-nominal')) found = g;
+  }
+  assert.ok(found, 'aparece el ítem de velocidad nominal mal configurada');
+  tick(found, 8.2);
+  for (const l of found.shift.losses) {
+    if (l.def.id === 'velocidad-nominal') {
+      found.update(DT, input({ pad: { pressed: ['a'] } }));
+      assert.match(found.bubble.cur.message, /tres KPIs/);
+    } else press(found, key[KPI.CATS[l.def.cat].kpi]);
+  }
+  assert.equal(found.stats.items.TODOS.ok, 1);
 });
 
 test('Supervisor: los reportes pueden mentir, el comodín los verifica y los KPI usan la causa real', () => {
   let found = null;
-  for (let seed = 1; seed < 60 && !found; seed++) {
+  for (let seed = 1; seed < 80 && !found; seed++) {
     const s = game('admin').create('dificil', { seed, mode: 'diag' });
     if (s.shift.reports.some((r) => r.status === 'wrong')) found = s;
   }
@@ -387,7 +435,7 @@ test('Supervisor: los reportes pueden mentir, el comodín los verifica y los KPI
   assert.notEqual(wrong.fake.cat, wrong.loss.def.cat);
   tick(s, 14.2);
   assert.equal(s.jokers, 1);
-  press(s, 'joker');
+  s.update(DT, input({ pad: { pressed: ['lb'] } }));
   assert.equal(s.jokers, 0);
   assert.ok(s.shift.reports.every((r) => r.verified));
   press(s, 'joker');
@@ -406,8 +454,7 @@ test('Supervisor: una partida dura como máximo 2 minutos (6 turnos de 20 s)', (
     assert.equal(s.over, true);
     assert.ok(t <= 120.1, `duró ${t} s`);
     assert.equal(s.index, 6);
-    const rep = s.report();
-    assert.equal(rep.score, 0, 'sin respuestas no hay puntos');
+    assert.equal(s.report().score, 0, 'sin respuestas no hay puntos');
   }
 });
 
@@ -417,7 +464,8 @@ test('Supervisor: la ayuda congela el turno y el modo se elige en la pantalla de
   assert.deepEqual(g.choice.values.map((v) => v.value), ['diag', 'kpi']);
   const s = g.create('facil', { mode: 'kpi', seed: 2 });
   assert.equal(s.mode, 'kpi');
-  press(s, 'help');
+  s.update(DT, input({ pad: { pressed: ['select'] } }));
+  assert.equal(s.help, true, 'SHARE / VIEW abre la ayuda');
   const t0 = s.shift.t;
   tick(s, 2);
   assert.equal(s.shift.t, t0);
