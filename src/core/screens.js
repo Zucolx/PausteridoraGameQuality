@@ -16,30 +16,37 @@
     return Array.from({ length: n }, (_, i) => ({ x: x0 + i * (w + CARD.gap), y: CARD.y, w, h: CARD.h }));
   }
 
-  // compact: tarjetas más bajas para dejar sitio al selector de duración.
-  function diffCards(compact = false) {
-    const h = compact ? 124 : 146;
-    const step = compact ? 132 : 156;
+  // rows: filas de opciones extra bajo las tarjetas (0, 1 o 2); con más filas, tarjetas más bajas.
+  function diffCards(rows = 0) {
+    const h = [146, 124, 108][Math.min(2, +rows)];
+    const step = [156, 132, 114][Math.min(2, +rows)];
     return D.DIFFICULTIES.map((d, i) => ({ id: d.id, x: 736, y: 140 + i * step, w: 504, h }));
   }
 
-  // Opción extra del juego (duración en Control de UP, modo en Supervisor de Turno).
-  // game.choice = { key, title, values: [{ value, label }], index } (índice por defecto).
-  function choiceOf(game) {
-    if (game.choice) return game.choice;
+  // Opciones extra del juego (duración en Control de UP; modo y tiempo de respuesta en Supervisor de Turno).
+  // game.choices = [{ key, title, values: [{ value, label }], index }] (index: valor por defecto).
+  function choicesOf(game) {
+    if (game.choices) return game.choices;
+    if (game.choice) return [game.choice];
     if (game.durations) {
-      return { key: 'duration', title: 'DURACIÓN DEL TURNO', values: game.durations.map((v) => ({ value: v, label: `${v} s` })), index: game.durations.length - 1 };
+      return [{ key: 'duration', title: 'DURACIÓN', values: game.durations.map((v) => ({ value: v, label: `${v} s` })), index: game.durations.length - 1 }];
     }
-    return null;
+    return [];
   }
 
-  function choiceChips(choice) {
+  function choiceOf(game) {
+    return choicesOf(game)[0] || null;
+  }
+
+  // row: fila de la opción; con dos filas, la primera sube para dejar sitio a la segunda.
+  function choiceChips(choice, row = 0, rows = 1) {
     const gap = 8;
     const widths = choice.values.map((v) => Math.max(56, v.label.length * 11 + 24));
     const total = widths.reduce((a, b) => a + b, 0) + gap * (widths.length - 1);
     let x = 736 + 504 - total;
+    const y = 548 - (rows - 1 - row) * 58;
     return choice.values.map((v, i) => {
-      const c = { value: v.value, label: v.label, x, y: 548, w: widths[i], h: 44 };
+      const c = { value: v.value, label: v.label, x, y, w: widths[i], h: 44 };
       x += widths[i] + gap;
       return c;
     });
@@ -185,7 +192,8 @@
     return `Mando ${type === 'ps' ? 'PlayStation' : 'Xbox'} conectado · los botones en pantalla se adaptan al mando`;
   }
 
-  function drawSetup(ctx, t, game, diffSel, records, choiceValue) {
+  // values: valor elegido en cada fila de opciones; focus: fila activa (-1 = dificultad).
+  function drawSetup(ctx, t, game, diffSel, records, values = [], focus = -1) {
     backdrop(ctx, t, game.accent);
     D.panel(ctx, 40, 40, 670, 652, { fill: '#160d09', edge: '#3a2418', radius: 16 });
     ctx.save();
@@ -223,9 +231,11 @@
 
     D.text(ctx, 'ELIGE LA DIFICULTAD', 736, 120, { size: 20, weight: 800, color: T.ink });
     const rec = records[game.id] || {};
-    const choice = choiceOf(game);
-    const compact = !!choice;
-    diffCards(compact).forEach((c, i) => {
+    const choices = choicesOf(game);
+    const rows = choices.length;
+    const compact = rows > 0;
+    const tight = rows > 1;
+    diffCards(rows).forEach((c, i) => {
       const d = D.DIFFICULTIES[i];
       const on = i === diffSel;
       D.panel(ctx, c.x, c.y, c.w, c.h, { fill: on ? '#24150d' : '#140c09', edge: on ? d.color : '#3a2418', radius: 14, glow: on ? d.color : null });
@@ -234,28 +244,41 @@
         D.roundRect(ctx, c.x, c.y, 10, c.h, 5);
         ctx.fill();
       }
-      const top = compact ? 34 : 40;
+      const top = tight ? 30 : compact ? 34 : 40;
       for (let p = 0; p < 3; p++) D.pumpkin(ctx, c.x + 42 + p * 46, c.y + top, 24, p < d.pumpkins);
       D.text(ctx, d.label, c.x + 172, c.y + top + 10, { size: 32, weight: 800, color: d.color });
       if (D.InputState.device === 'keyboard') D.keycap(ctx, String(i + 1), c.x + c.w - 30, c.y + 34, { size: 14, color: on ? d.color : '#5a4030' });
       D.text(ctx, `Récord: ${bestLabel(rec[d.id])}`, c.x + c.w - 54, c.y + 41, { size: 14, weight: 700, color: T.dim, align: 'right' });
-      const by = compact ? 70 : 82;
-      const step = compact ? 19 : 22;
+      const by = tight ? 62 : compact ? 70 : 82;
+      const step = tight ? 18 : compact ? 19 : 22;
       game.difficulties[d.id].forEach((b, j) => {
         D.text(ctx, '•', c.x + 28, c.y + by + j * step, { size: 16, weight: 800, color: d.color });
-        D.text(ctx, b, c.x + 44, c.y + by + j * step, { size: compact ? 15 : 16, weight: 600, color: on ? T.ink : T.dim });
+        D.text(ctx, b, c.x + 44, c.y + by + j * step, { size: tight ? 14 : compact ? 15 : 16, weight: 600, color: on ? T.ink : T.dim });
       });
     });
-    let chosen = null;
-    if (choice) {
-      D.text(ctx, choice.title, 736, 576, { size: 17, weight: 800, color: T.ink });
-      D.hints(ctx, [[{ key: '← →', pad: 'dpadLR' }, 'cambiar']], 736, 602, { size: 12, ink: T.dim });
-      for (const c of choiceChips(choice)) {
-        const on = c.value === choiceValue;
-        if (on) chosen = c.label;
+    const chosen = [];
+    choices.forEach((choice, r) => {
+      const chips = choiceChips(choice, r, rows);
+      const active = rows > 1 && focus === r;
+      const ty = chips[0].y + 28;
+      if (active) D.text(ctx, '▸', 736, ty, { size: 17, weight: 800, color: game.accent });
+      // El título se achica si no cabe a la izquierda de las opciones.
+      const tx = active ? 756 : 736;
+      let size = rows > 1 ? 15 : 17;
+      ctx.font = D.font(size, 800);
+      while (size > 11 && ctx.measureText(choice.title).width > chips[0].x - tx - 10) ctx.font = D.font(--size, 800);
+      D.text(ctx, choice.title, tx, ty, { size, weight: 800, color: active ? game.accent : T.ink });
+      for (const c of chips) {
+        const on = c.value === values[r];
+        if (on) chosen.push(c.label);
         D.panel(ctx, c.x, c.y, c.w, c.h, { fill: on ? game.accent : '#140c09', edge: on ? game.accent : '#3a2418', radius: 10, glow: on ? game.accent : null });
         D.text(ctx, c.label, c.x + c.w / 2, c.y + 29, { size: 19, weight: 800, color: on ? '#170e0a' : T.dim, align: 'center' });
       }
+    });
+    if (rows === 1) D.hints(ctx, [[{ key: '← →', pad: 'dpadLR' }, 'cambiar']], 736, 602, { size: 12, ink: T.dim });
+    else if (rows > 1) {
+      const what = focus >= 0 ? choices[focus].title.toLowerCase() : choices[0].title.toLowerCase();
+      D.hints(ctx, [[{ key: '← →', pad: 'dpadLR' }, `cambiar ${what}`]], 736, 602, { size: 12, ink: T.dim });
     }
     const b = playButton();
     const d = D.DIFFICULTIES[diffSel];
@@ -267,13 +290,16 @@
     D.roundRect(ctx, b.x, b.y, b.w, b.h, 12);
     ctx.fill();
     ctx.restore();
-    const label = `▶  JUGAR EN ${d.label}${chosen ? ` · ${chosen}` : ''}`;
-    D.text(ctx, label, b.x + 24, b.y + 37, { size: 24, weight: 800, color: '#170e0a' });
+    const label = `▶  JUGAR EN ${[d.label, ...chosen].join(' · ')}`;
+    let size = 24;
+    ctx.font = D.font(size, 800);
+    while (size > 16 && ctx.measureText(label).width > b.w - 140) ctx.font = D.font(--size, 800);
+    D.text(ctx, label, b.x + 24, b.y + 29 + size / 3, { size, weight: 800, color: '#170e0a' });
     D.control(ctx, { key: 'ENTER', pad: 'a' }, b.x + b.w - 90, b.y + b.h / 2, { size: 16, color: '#170e0a', keyInk: d.color });
     D.hints(
       ctx,
       [
-        [{ key: '↑ ↓', pad: 'dpadUD' }, 'dificultad'],
+        [{ key: '↑ ↓', pad: 'dpadUD' }, rows > 1 ? 'dificultad / opciones' : 'dificultad'],
         [{ key: 'ESC', pad: 'b' }, 'volver'],
       ],
       b.x + b.w / 2,
@@ -390,5 +416,5 @@
     );
   }
 
-  PF.Screens = { menuCards, diffCards, choiceOf, choiceChips, playButton, drawMenu, drawSetup, drawPause, drawReport };
+  PF.Screens = { menuCards, diffCards, choicesOf, choiceOf, choiceChips, playButton, drawMenu, drawSetup, drawPause, drawReport };
 })();

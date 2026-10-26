@@ -362,8 +362,11 @@ test('Supervisor: los turnos generados tienen una causa dominante clara y LEF �
         for (let j = 1; j < sh.losses.length; j++) assert.ok(sh.losses[j].start >= sh.losses[j - 1].start + sh.losses[j - 1].hours - 1e-9);
         assert.ok(sh.losses.at(-1).start + sh.losses.at(-1).hours <= 12);
         assert.ok(sh.options.includes(sh.owner));
-        s.shift.t = 20;
+        // Se agota el tiempo para responder y se continúa.
+        s.shift.t = 6;
+        s.shift.wait = s.answerTime;
         s.update(DT, input());
+        press(s, 'confirm');
       }
     }
   }
@@ -372,7 +375,7 @@ test('Supervisor: los turnos generados tienen una causa dominante clara y LEF �
 
 test('Supervisor (diagnóstico): rombo como la cara del mando y explicación del patrón', () => {
   const s = game('admin').create('normal', { seed: 5, mode: 'diag' });
-  // Teclado: ↑ LEF (interno) · ← GLY (planificada/externa) · → OSE (sin programar) · ↓ excelente.
+  // ¿Qué KPI detecta la gran caída? Teclado: ↑ LEF · ← GLY · → OSE · ↓ ninguno (excelente).
   const key = { int: 'up', pe: 'left', ns: 'right', ok: 'down' };
   press(s, key[s.shift.type]);
   assert.equal(s.stats.diagOk, 1);
@@ -381,21 +384,24 @@ test('Supervisor (diagnóstico): rombo como la cara del mando y explicación del
   press(s, pos);
   assert.equal(s.stats.actionOk, 1);
   assert.equal(s.stats.points, 150);
-  tick(s, 3);
+  assert.equal(s.shift.phase, 'done');
+  press(s, 'confirm');
   assert.equal(s.index, 1);
-  // Mando: △/Y = LEF · □/X = GLY · ○/B = OSE · ✕/A = excelente.
+  // Mando: △/Y = LEF · □/X = GLY · ○/B = OSE · ✕/A = ninguno.
   const padBtn = { int: 'y', pe: 'x', ns: 'b', ok: 'a' };
   const wrong = Object.keys(padBtn).find((c) => c !== s.shift.type);
   s.update(DT, input({ pad: { pressed: [padBtn[wrong]] } }));
   assert.equal(s.stats.diagOk, 1);
   assert.equal(s.bubble.cur.kind, 'error');
   assert.match(s.bubble.log[0], /Patrón:/);
+  assert.match(s.bubble.log[0], /la gran caída la detecta el (LEF|GLY|OSE)|ningún KPI cae/);
+  assert.match(Object.keys(s.stats.confusions)[0], /^(LEF|GLY|OSE|NINGUNO) en vez de (LEF|GLY|OSE|NINGUNO)$/);
   assert.deepEqual(Object.fromEntries(Object.entries(PF.Admin.SLOTS).map(([k, v]) => [k, v.pad])), { LEF: 'y', GLY: 'x', OSE: 'b', OK: 'a' });
 });
 
 test('Supervisor (¿qué KPI cae?): clasifica por el primer KPI que la detecta, incluso "los tres"', () => {
   const s = game('admin').create('dificil', { seed: 8, mode: 'kpi' });
-  tick(s, 8.2);
+  tick(s, 6.2);
   assert.equal(s.shift.phase, 'report');
   assert.ok(s.shift.losses.some((l) => l.def.mixed), 'difícil incluye ítems que caen en más de un KPI');
   const key = { LEF: 'up', GLY: 'left', OSE: 'right', TODOS: 'down' };
@@ -413,7 +419,7 @@ test('Supervisor (¿qué KPI cae?): clasifica por el primer KPI que la detecta, 
     if (g.shift.losses.some((l) => l.def.id === 'velocidad-nominal')) found = g;
   }
   assert.ok(found, 'aparece el ítem de velocidad nominal mal configurada');
-  tick(found, 8.2);
+  tick(found, 6.2);
   for (const l of found.shift.losses) {
     if (l.def.id === 'velocidad-nominal') {
       found.update(DT, input({ pad: { pressed: ['a'] } }));
@@ -433,7 +439,7 @@ test('Supervisor: los reportes pueden mentir, el comodín los verifica y los KPI
   const s = found;
   const wrong = s.shift.reports.find((r) => r.status === 'wrong');
   assert.notEqual(wrong.fake.cat, wrong.loss.def.cat);
-  tick(s, 14.2);
+  tick(s, 6.2);
   assert.equal(s.jokers, 1);
   s.update(DT, input({ pad: { pressed: ['lb'] } }));
   assert.equal(s.jokers, 0);
@@ -442,26 +448,69 @@ test('Supervisor: los reportes pueden mentir, el comodín los verifica y los KPI
   assert.equal(s.jokers, 0, 'sin llamadas no se gastan más');
 });
 
-test('Supervisor: una partida dura como máximo 2 minutos (6 turnos de 20 s)', () => {
+test('Supervisor: 12 h en 6 s y el juego espera la respuesta; solo avanza solo si se acaba el tiempo', () => {
   for (const mode of ['diag', 'kpi']) {
-    const s = game('admin').create('normal', { seed: 3, mode });
-    assert.equal(s.duration, 120);
-    let t = 0;
-    while (!s.over && t < 200) {
-      s.update(DT, input());
-      t += DT;
-    }
-    assert.equal(s.over, true);
-    assert.ok(t <= 120.1, `duró ${t} s`);
-    assert.equal(s.index, 6);
+    const s = game('admin').create('normal', { seed: 3, mode, answerTime: 30 });
+    assert.equal(s.duration, 30);
+    tick(s, 6.2);
+    assert.equal(s.shift.clock, 12, 'el turno de 12 h se simula en 6 s');
+    if (mode === 'kpi') assert.equal(s.shift.phase, 'report');
+    tick(s, 29);
+    assert.equal(s.index, 0, 'sin responder, el turno sigue esperando');
+    assert.notEqual(s.shift.phase, 'done');
+    assert.ok(s.timeLeft > 0 && s.timeLeft < 2);
+    tick(s, 1.2);
+    assert.equal(s.shift.phase, 'done', 'se agotó el tiempo');
+    assert.equal(s.shift.timedOut, true);
+    assert.equal(s.stats.timeouts, 1);
+    assert.equal(s.bubble.cur.title, 'Tiempo agotado');
+    tick(s, PF.Admin.REVEAL_S + 0.2);
+    assert.equal(s.index, 1, 'tras mostrar la solución, avanza solo');
     assert.equal(s.report().score, 0, 'sin respuestas no hay puntos');
   }
 });
 
+test('Supervisor: tras responder, la explicación espera a que pulses Continuar', () => {
+  const s = game('admin').create('dificil', { seed: 4, mode: 'diag', answerTime: 50 });
+  const key = { int: 'up', pe: 'left', ns: 'right', ok: 'down' };
+  tick(s, 45);
+  assert.equal(s.index, 0);
+  press(s, key[s.shift.type]);
+  press(s, ['left', 'up', 'right'][s.shift.options.indexOf(s.shift.owner)]);
+  assert.equal(s.stats.points, 150, 'responder antes de que se acabe el tiempo puntúa');
+  assert.equal(s.shift.phase, 'done');
+  tick(s, 120);
+  assert.equal(s.index, 0, 'no avanza solo: el juego no es frenético');
+  assert.ok(s.bubble.cur, 'la explicación sigue a la vista');
+  press(s, 'down');
+  assert.equal(s.index, 0, 'las flechas no saltan la explicación');
+  s.update(DT, input({ pad: { pressed: ['a'] } }));
+  assert.equal(s.index, 1, '✕/A continúa');
+  assert.equal(s.bubble.cur, null);
+  assert.equal(s.timeLeft, 50, 'el reloj de respuesta se reinicia en cada turno');
+});
+
+test('Supervisor: el tiempo para responder (30/40/50 s) se elige aparte de la dificultad', () => {
+  const g = game('admin');
+  assert.deepEqual(
+    g.choices.map((c) => c.key),
+    ['mode', 'answerTime']
+  );
+  assert.deepEqual(g.choices[1].values.map((v) => v.value), [30, 40, 50]);
+  assert.equal(g.choices[1].values[g.choices[1].index].value, 40);
+  for (const diff of ['facil', 'normal', 'dificil']) {
+    assert.equal(g.create(diff, { answerTime: 50 }).answerTime, 50);
+    assert.equal(g.create(diff, { answerTime: 30 }).answerTime, 30);
+    assert.equal(g.create(diff).answerTime, 40);
+  }
+  assert.equal(g.create('normal', { answerTime: 7 }).answerTime, 40, 'solo valores válidos');
+  assert.equal(PF.Admin.SIM_S, 6);
+});
+
 test('Supervisor: la ayuda congela el turno y el modo se elige en la pantalla de inicio', () => {
   const g = game('admin');
-  assert.equal(g.choice.key, 'mode');
-  assert.deepEqual(g.choice.values.map((v) => v.value), ['diag', 'kpi']);
+  assert.equal(g.choices[0].key, 'mode');
+  assert.deepEqual(g.choices[0].values.map((v) => v.value), ['diag', 'kpi']);
   const s = g.create('facil', { mode: 'kpi', seed: 2 });
   assert.equal(s.mode, 'kpi');
   s.update(DT, input({ pad: { pressed: ['select'] } }));

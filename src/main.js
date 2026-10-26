@@ -68,28 +68,51 @@
     return D.DIFFICULTIES[diffSel].id;
   }
 
-  // Opción extra del juego (duración, modo…): valor elegido o el de por defecto.
-  function choiceIndex() {
-    const c = S.choiceOf(game());
+  // Opciones extra del juego (duración, modo, tiempo de respuesta…): valor elegido o el de por defecto.
+  // choiceSel[id] = índice elegido por fila; setupFocus = fila activa (-1 = dificultad).
+  let setupFocus = -1;
+
+  function choiceIndex(row) {
+    const c = S.choicesOf(game())[row];
     if (!c) return -1;
-    const i = choiceSel[game().id] ?? c.index;
+    const i = (choiceSel[game().id] || [])[row] ?? c.index;
     return Math.max(0, Math.min(c.values.length - 1, i));
   }
 
-  function choiceValue() {
-    const c = S.choiceOf(game());
-    return c ? c.values[choiceIndex()].value : null;
+  function choiceValues() {
+    return S.choicesOf(game()).map((c, r) => c.values[choiceIndex(r)].value);
+  }
+
+  function setChoice(row, i) {
+    const id = game().id;
+    choiceSel[id] = choiceSel[id] || [];
+    choiceSel[id][row] = i;
   }
 
   function moveChoice(delta) {
-    const c = S.choiceOf(game());
+    const row = Math.max(0, setupFocus);
+    const c = S.choicesOf(game())[row];
     if (!c) return;
-    choiceSel[game().id] = Math.max(0, Math.min(c.values.length - 1, choiceIndex() + delta));
+    setChoice(row, Math.max(0, Math.min(c.values.length - 1, choiceIndex(row) + delta)));
+  }
+
+  // ↑ ↓ recorre las dificultades y después las filas de opciones (si hay más de una).
+  function moveFocus(delta) {
+    const rows = S.choicesOf(game()).length;
+    const pos = setupFocus >= 0 ? 3 + setupFocus : diffSel;
+    const max = rows > 1 ? 2 + rows : 2;
+    const next = Math.max(0, Math.min(max, pos + delta));
+    if (next <= 2) {
+      diffSel = next;
+      setupFocus = -1;
+    } else setupFocus = next - 3;
   }
 
   function startGame() {
-    const c = S.choiceOf(game());
-    inst = game().create(diffId(), c ? { [c.key]: choiceValue() } : {});
+    const values = choiceValues();
+    const opts = {};
+    S.choicesOf(game()).forEach((c, r) => (opts[c.key] = values[r]));
+    inst = game().create(diffId(), opts);
     report = null;
     held.clear();
     pressed = [];
@@ -130,6 +153,7 @@
   function shell(action, digit) {
     const dirs = ['up', 'down', 'left', 'right'];
     if (screen === 'menu') {
+      setupFocus = -1;
       if (action === 'left') sel = (sel + games.length - 1) % games.length;
       else if (action === 'right') sel = (sel + 1) % games.length;
       else if (action === 'digit' && digit <= games.length) {
@@ -137,15 +161,19 @@
         screen = 'setup';
       } else if (action === 'confirm' || action === 'start') screen = 'setup';
     } else if (screen === 'setup') {
-      if (action === 'up') diffSel = Math.max(0, diffSel - 1);
-      else if (action === 'down') diffSel = Math.min(2, diffSel + 1);
+      if (action === 'up') moveFocus(-1);
+      else if (action === 'down') moveFocus(1);
       else if (action === 'left') moveChoice(-1);
       else if (action === 'right') moveChoice(1);
       else if (action === 'digit' && digit <= 3) {
         diffSel = digit - 1;
+        setupFocus = -1;
         startGame();
       } else if (action === 'confirm' || action === 'start') startGame();
-      else if (action === 'back') screen = 'menu';
+      else if (action === 'back') {
+        screen = 'menu';
+        setupFocus = -1;
+      }
     } else if (screen === 'report') {
       if (action === 'confirm' || action === 'start') startGame();
       else if (action === 'alt') screen = 'setup';
@@ -226,17 +254,25 @@
       const i = S.menuCards(games.length).findIndex((c) => inside(p, c));
       if (i >= 0) {
         sel = i;
+        setupFocus = -1;
         screen = 'setup';
       }
     } else if (screen === 'setup') {
-      const choice = S.choiceOf(game());
-      const i = S.diffCards(!!choice).findIndex((c) => inside(p, c));
-      const chip = choice ? S.choiceChips(choice).findIndex((c) => inside(p, c)) : -1;
+      const choices = S.choicesOf(game());
+      const i = S.diffCards(choices.length).findIndex((c) => inside(p, c));
+      let hit = null;
+      choices.forEach((c, r) => {
+        const chip = S.choiceChips(c, r, choices.length).findIndex((ch) => inside(p, ch));
+        if (chip >= 0) hit = [r, chip];
+      });
       if (i >= 0) {
+        setupFocus = -1;
         if (i === diffSel) startGame();
         else diffSel = i;
-      } else if (chip >= 0) choiceSel[game().id] = chip;
-      else if (inside(p, S.playButton())) startGame();
+      } else if (hit) {
+        setChoice(hit[0], hit[1]);
+        if (choices.length > 1) setupFocus = hit[0];
+      } else if (inside(p, S.playButton())) startGame();
     } else if (screen === 'play') {
       clicks.push(p);
     }
@@ -332,7 +368,7 @@
     } else {
       D.begin(r);
       if (screen === 'menu') S.drawMenu(ctx, r.t, games, sel, records);
-      else if (screen === 'setup') S.drawSetup(ctx, r.t, game(), diffSel, records, choiceValue());
+      else if (screen === 'setup') S.drawSetup(ctx, r.t, game(), diffSel, records, choiceValues(), setupFocus);
       else if (screen === 'report') S.drawReport(ctx, r.t, game(), diffId(), report, (records[game().id] || {})[diffId()], isRecord);
     }
     requestAnimationFrame(frame);
@@ -347,12 +383,16 @@
       return screen;
     },
     games,
-    // value: duración (Control de UP) o modo (Supervisor de Turno).
+    // value: valor de la primera opción (duración en Control de UP, modo en Supervisor de Turno)
+    // u objeto { clave: valor } para varias (p. ej. { mode: 'kpi', answerTime: 30 }).
     play(id, diff = 'normal', value = null) {
       sel = games.findIndex((g) => g.id === id);
       diffSel = D.DIFFICULTIES.findIndex((d) => d.id === diff);
-      const c = S.choiceOf(game());
-      if (value != null && c) choiceSel[id] = c.values.findIndex((v) => v.value === value);
+      const choices = S.choicesOf(game());
+      const wanted = value != null && typeof value === 'object' ? value : value != null && choices[0] ? { [choices[0].key]: value } : {};
+      choices.forEach((c, r) => {
+        if (c.key in wanted) setChoice(r, c.values.findIndex((v) => v.value === wanted[c.key]));
+      });
       startGame();
     },
   };

@@ -1,7 +1,9 @@
 // Supervisor de Turno: administración del turno de envasado con LEF, GLY y OSE.
-// 6 turnos de 20 s (máx. 2 min). Dos modos:
-//  · Diagnóstico de turno: lee el tablero y decide dónde está la gran caída
-//    (interna, planificada/externa, sin programar o turno excelente) y con quién atacarla.
+// 6 turnos: cada turno de 12 h se simula en 6 s y luego hay 30, 40 o 50 s para responder
+// (se elige en la configuración, aparte de la dificultad). El juego espera la respuesta;
+// solo avanza solo si se acaba ese tiempo. Dos modos:
+//  · Diagnóstico de turno: lee el tablero y decide qué KPI detecta la gran caída
+//    (LEF, GLY, OSE o ninguno si el turno fue excelente) y con quién atacarla.
 //  · ¿Qué KPI cae?: en el reporte de fin de turno, clasifica cada pérdida por el
 //    primer KPI que la detecta (LEF, GLY u OSE; o los tres si es un error de dato).
 // Los KPI se calculan siempre con las causas reales: los reportes pueden estar sin
@@ -16,14 +18,15 @@
   const ACCENT = '#5fc8e8';
 
   const SHIFTS = 6;
-  const SHIFT_S = 20;
-  const DONE_S = 2.6;
+  const SIM_S = 6; // 12 h simuladas en 6 s
+  const ANSWER_TIMES = [30, 40, 50];
+  const REVEAL_S = 6; // tras agotar el tiempo, la solución se ve unos segundos y el juego sigue
   const MODES = { diag: 'Diagnóstico de turno', kpi: '¿Qué KPI cae?' };
 
   const DIFF = {
-    facil: { simA: 12, simB: 7, decoy: 0, unverified: 0, wrong: 0, jokers: 3, tags: true, gapHints: true, lineAlways: true, colorTimeline: true, labels: true, itemsB: 3, traps: 0 },
-    normal: { simA: 13, simB: 8, decoy: 0.5, unverified: 0.35, wrong: 0, jokers: 2, tags: false, gapHints: false, lineAlways: false, colorTimeline: false, labels: true, itemsB: 4, traps: 1 },
-    dificil: { simA: 14, simB: 8, decoy: 1, unverified: 0.25, wrong: 0.3, jokers: 1, tags: false, gapHints: false, lineAlways: false, colorTimeline: false, labels: false, itemsB: 4, traps: 2 },
+    facil: { decoy: 0, unverified: 0, wrong: 0, jokers: 3, tags: true, gapHints: true, lineAlways: true, colorTimeline: true, labels: true, itemsB: 3, traps: 0 },
+    normal: { decoy: 0.5, unverified: 0.35, wrong: 0, jokers: 2, tags: false, gapHints: false, lineAlways: false, colorTimeline: false, labels: true, itemsB: 4, traps: 1 },
+    dificil: { decoy: 1, unverified: 0.25, wrong: 0.3, jokers: 1, tags: false, gapHints: false, lineAlways: false, colorTimeline: false, labels: false, itemsB: 4, traps: 2 },
   };
 
   // Botones en rombo, igual que la cara del mando y en el orden LEF ≥ GLY ≥ OSE:
@@ -35,6 +38,8 @@
     OK: { key: '↓', pad: 'a', pos: 'bottom' },
   };
   const SLOT_CAT = { LEF: 'int', GLY: 'pe', OSE: 'ns', OK: 'ok' };
+  // Diagnóstico expresado como el KPI que detecta primero la gran caída.
+  const DIAG_KPI = { int: 'LEF', pe: 'GLY', ns: 'OSE', ok: 'NINGUNO' };
   const POS_INDEX = { left: 0, top: 1, right: 2 };
   const CTRL = {
     joker: { key: 'C', pad: 'lb' },
@@ -62,14 +67,17 @@
   function create(diffId = 'normal', opts = {}) {
     const cfg = DIFF[diffId] || DIFF.normal;
     const mode = MODES[opts.mode] ? opts.mode : 'diag';
+    const answerTime = ANSWER_TIMES.includes(+opts.answerTime) ? +opts.answerTime : 40;
     const s = {
       id: 'admin',
       mode,
       diff: diffId,
       cfg,
       rng: D.makeRng(opts.seed),
-      duration: SHIFTS * SHIFT_S,
-      timeLeft: SHIFTS * SHIFT_S,
+      answerTime,
+      // El reloj del HUD es el tiempo para responder del turno en curso.
+      duration: answerTime,
+      timeLeft: answerTime,
       over: false,
       index: -1,
       shift: null,
@@ -86,6 +94,7 @@
         diagOk: 0,
         actionOk: 0,
         unanswered: 0,
+        timeouts: 0,
         jokersUsed: 0,
         items: { LEF: { ok: 0, total: 0 }, GLY: { ok: 0, total: 0 }, OSE: { ok: 0, total: 0 }, TODOS: { ok: 0, total: 0 } },
         confusions: {},
@@ -250,15 +259,30 @@
       return;
     }
     const sh = s.mode === 'diag' ? genDiag(s) : genKpi(s);
-    Object.assign(sh, { t: 0, phase: 'run', ff: false, doneT: 0, diag: null, action: null, clock: 0 });
+    Object.assign(sh, { t: 0, wait: 0, phase: 'run', ff: false, timedOut: false, doneT: 0, diag: null, action: null, clock: 0 });
     s.shift = sh;
     s.view = 'line';
-    s.timeLeft = (SHIFTS - s.index) * SHIFT_S;
-    s.banner = D.makeBanner(`TURNO ${s.index + 1} DE ${SHIFTS} · 12 h en ${sim(s)} s`, ACCENT, s.mode === 'diag' ? 'Mira el tablero: ¿dónde está la gran caída?' : 'Observa la línea: al final clasificarás cada pérdida', 1.3);
+    s.timeLeft = s.answerTime;
+    B.clear(s.bubble);
+    s.banner = D.makeBanner(
+      `TURNO ${s.index + 1} DE ${SHIFTS} · 12 h en ${SIM_S} s`,
+      ACCENT,
+      s.mode === 'diag' ? 'Responde: ¿qué KPI detecta la caída?' : 'Al final, clasifica cada pérdida',
+      1.3
+    );
   }
 
-  function sim(s) {
-    return s.mode === 'diag' ? s.cfg.simA : s.cfg.simB;
+  // Terminó la simulación de las 12 h (en diagnóstico se puede responder antes).
+  function simDone(sh) {
+    return sh.t >= SIM_S || sh.clock >= K.HOURS;
+  }
+
+  // El turno queda resuelto: la explicación se queda en pantalla hasta pulsar Continuar.
+  function finish(s) {
+    const sh = s.shift;
+    sh.phase = 'done';
+    sh.doneT = REVEAL_S;
+    if (s.bubble.cur) s.bubble.cur.life = s.bubble.cur.max = 1e6;
   }
 
   // Se muestran las causas reales (brechas y horas por tipo): en diagnóstico tras responder;
@@ -299,22 +323,28 @@
 
     const sh = s.shift;
     sh.t += dt;
-    s.timeLeft = Math.max(0, (SHIFTS - s.index) * SHIFT_S - sh.t);
     B.update(s.bubble, dt);
     s.floats = D.floatsUpdate(s.floats, dt);
     D.tickBanner(s, dt);
-    // Reloj del turno simulado: 12 h en `sim` segundos (acelera tras responder).
-    const target = Math.min(K.HOURS, (sh.t / sim(s)) * K.HOURS);
+    // Reloj del turno simulado: 12 h en SIM_S segundos (acelera si respondes antes).
+    const target = Math.min(K.HOURS, (sh.t / SIM_S) * K.HOURS);
     sh.clock = sh.ff ? Math.min(K.HOURS, sh.clock + dt * 18) : Math.max(sh.clock, target);
 
     if (sh.phase === 'done') {
-      sh.doneT -= dt;
-      if (sh.doneT <= 0 || sh.t >= SHIFT_S) nextShift(s);
+      // Continuar: Enter/Espacio, ✕/A o clic en el botón. Si se agotó el tiempo, sigue solo.
+      const next = hit(['confirm', 'space'], ['a']) || (input.clicks || []).some((c) => inside(c, continueRect()));
+      if (sh.timedOut) sh.doneT -= dt;
+      if (next || (sh.timedOut && sh.doneT <= 0)) {
+        nextShift(s);
+        D.sfx('blip');
+      }
       return;
     }
-    if (sh.t >= SHIFT_S) {
+    // El tiempo para responder corre cuando terminan las 12 h simuladas.
+    if (simDone(sh)) sh.wait += dt;
+    s.timeLeft = Math.max(0, s.answerTime - sh.wait);
+    if (sh.wait >= s.answerTime) {
       timeout(s);
-      nextShift(s);
       return;
     }
     if (s.mode === 'kpi' && sh.phase === 'run' && sh.clock >= K.HOURS) {
@@ -336,10 +366,14 @@
     else if (hit(['right', '3'], ['b', 'right'])) ans = 'OSE';
     else if (hit(['down', '4'], ['a', 'down'])) ans = 'OK';
     for (const c of input.clicks || []) {
-      const slot = Object.entries(diamond()).find(([, rc]) => c.x >= rc.x && c.x <= rc.x + rc.w && c.y >= rc.y && c.y <= rc.y + rc.h);
+      const slot = Object.entries(diamond()).find(([, rc]) => inside(c, rc));
       if (slot) ans = slot[0];
     }
     if (ans) answer(s, ans);
+  }
+
+  function inside(p, rc) {
+    return p.x >= rc.x && p.x <= rc.x + rc.w && p.y >= rc.y && p.y <= rc.y + rc.h;
   }
 
   function useJoker(s) {
@@ -387,20 +421,26 @@
       s.stats.diagOk++;
       s.stats.points += 100;
       D.floatAdd(s.floats, 1062, 290, '+100', T.ok, 24);
-      B.say(s.bubble, `${d.label}. ${K.DIAG_WHY[truth]}`, { kind: 'ok', life: 4.5 });
+      B.say(s.bubble, `${diagSaid(truth)} ${K.DIAG_WHY[truth]}`, { kind: 'ok', life: 8 });
       D.sfx('resolved');
     } else {
-      const key = `${K.DIAG[cat].short} en vez de ${d.short}`;
+      const key = `${DIAG_KPI[cat]} en vez de ${DIAG_KPI[truth]}`;
       s.stats.confusions[key] = (s.stats.confusions[key] || 0) + 1;
-      B.say(s.bubble, `No era "${K.DIAG[cat].label.toLowerCase()}": era ${d.label.toLowerCase()}. Patrón: ${d.pattern}. ${K.DIAG_WHY[truth]}`);
+      const said = cat === 'ok' ? 'No es "ninguno"' : `No es el ${DIAG_KPI[cat]}`;
+      const why = diagSaid(truth);
+      B.say(s.bubble, `${said}: ${why[0].toLowerCase()}${why.slice(1)} Patrón: ${d.pattern}. ${K.DIAG_WHY[truth]}`, { life: 10 });
     }
+  }
+
+  // "La gran caída la detecta el LEF (problema interno de la línea)."
+  function diagSaid(type) {
+    const d = K.DIAG[type];
+    return type === 'ok' ? `Ningún KPI cae: ${d.label.toLowerCase()}.` : `La gran caída la detecta el ${DIAG_KPI[type]} (${d.label.toLowerCase()}).`;
   }
 
   function actionAnswer(s, owner) {
     const sh = s.shift;
     sh.action = owner;
-    sh.phase = 'done';
-    sh.doneT = DONE_S;
     s.stats.max += 50;
     const correct = sh.owner;
     const why = sh.type === 'ok' ? 'Turno excelente: no hay pérdida grande que atacar; se estandariza lo que funcionó.' : K.CATS[sh.type].power;
@@ -413,6 +453,7 @@
     } else {
       B.say(s.bubble, `La pérdida principal se ataca con ${ownerLabel(correct)}, no con ${ownerLabel(owner)}. ${why}`);
     }
+    finish(s);
   }
 
   function ownerLabel(o) {
@@ -441,21 +482,23 @@
       B.say(s.bubble, `No es ${kpi === 'TODOS' ? 'de los tres' : kpi}: ${l.def.distort ? 'el que se distorsiona es el LEF' : `la detecta primero ${said}`}. ${why}`);
     }
     sh.cursor++;
-    if (sh.cursor >= sh.losses.length) {
-      sh.phase = 'done';
-      sh.doneT = DONE_S + 0.6;
-    }
+    if (sh.cursor >= sh.losses.length) finish(s);
   }
 
-  // Se acabaron los 20 s del turno sin completar la respuesta.
+  // Se acabó el tiempo para responder: lo que falta cuenta como fallo, se muestra la
+  // solución unos segundos y el juego avanza solo.
   function timeout(s) {
     const sh = s.shift;
+    s.stats.timeouts++;
     if (s.mode === 'diag') {
       if (sh.phase === 'run') {
         s.stats.max += 150;
         s.stats.unanswered++;
-        B.say(s.bubble, `Turno sin diagnóstico. Era ${K.DIAG[sh.type].label.toLowerCase()} (${K.DIAG[sh.type].pattern}).`, { kind: 'tip', life: 4 });
-      } else if (sh.phase === 'action') s.stats.max += 50;
+        B.say(s.bubble, `Se acabó el tiempo. ${diagSaid(sh.type)} Patrón: ${K.DIAG[sh.type].pattern}. Se ataca con ${ownerLabel(sh.owner)}.`, { kind: 'tip', title: 'Tiempo agotado' });
+      } else if (sh.phase === 'action') {
+        s.stats.max += 50;
+        B.say(s.bubble, `Se acabó el tiempo sin elegir con quién atacarla: era con ${ownerLabel(sh.owner)}.`, { kind: 'tip', title: 'Tiempo agotado' });
+      }
     } else {
       for (let i = sh.cursor; i < sh.losses.length; i++) {
         s.stats.max += 50;
@@ -463,9 +506,13 @@
       }
       if (sh.cursor < sh.losses.length) {
         s.stats.unanswered += sh.losses.length - sh.cursor;
-        B.say(s.bubble, 'Se acabó el turno con pérdidas sin clasificar: cuentan como fallos.', { kind: 'tip', life: 3 });
+        B.say(s.bubble, 'Se acabó el tiempo con pérdidas sin clasificar: cuentan como fallos. Mira la solución en el reporte.', { kind: 'tip', title: 'Tiempo agotado' });
       }
+      sh.cursor = sh.losses.length;
     }
+    sh.ff = true;
+    finish(s);
+    sh.timedOut = true;
   }
 
   // ------------------------------------------------------------- Dibujo
@@ -479,10 +526,11 @@
     if (s.shift) {
       drawKpiPanel(s, ctx);
       drawCenter(s, ctx, t);
-      drawDecision(s, ctx);
+      drawDecision(s, ctx, r);
     }
     D.floatsDraw(ctx, s.floats);
-    B.bar(ctx, MSG, { bubble: s.bubble, notices: [s.banner], t, split: 0.72 });
+    // Las explicaciones son largas: si hay una, usa todo el ancho de la barra.
+    B.bar(ctx, MSG, { bubble: s.bubble, notices: s.bubble.cur ? [] : [s.banner], t, split: 0.72 });
     D.hud(ctx, t, {
       title: 'SUPERVISOR DE TURNO',
       diff: s.diff,
@@ -859,6 +907,11 @@
         D.panel(ctx, ax - 10, y + 12, 66, 52, { fill: ok ? T.okDark : '#4a1410', edge: ok ? T.ok : T.red, radius: 8 });
         D.text(ctx, `${ok ? '✔' : '✖'} ${ans === 'TODOS' ? '3' : ans}`, ax + 23, y + 34, { size: 15, weight: 800, color: ok ? T.ok : T.red, align: 'center' });
         if (!ok) D.text(ctx, `era ${truth === 'TODOS' ? 'los 3' : truth}`, ax + 23, y + 54, { size: 12, weight: 700, color: T.ink, align: 'center' });
+      } else if (sh.phase === 'done') {
+        // Sin responder (se agotó el tiempo): se muestra la solución.
+        D.panel(ctx, ax - 10, y + 12, 66, 52, { fill: '#2a2018', edge: T.warn, radius: 8 });
+        D.text(ctx, '⏱', ax + 23, y + 34, { size: 15, weight: 800, color: T.warn, align: 'center' });
+        D.text(ctx, `era ${truth === 'TODOS' ? 'los 3' : truth}`, ax + 23, y + 54, { size: 12, weight: 700, color: T.ink, align: 'center' });
       } else {
         D.text(ctx, cur ? '?' : '·', ax + 23, y + 46, { size: 26, weight: 800, color: cur ? ACCENT : T.faint, align: 'center' });
       }
@@ -890,12 +943,13 @@
         OK: ['LOS TRES', 'error de dato', K.CATS.all.color],
       };
     }
-    if (sh.phase === 'run') {
+    if (sh.phase === 'run' || (sh.phase === 'done' && !sh.diag)) {
+      // ¿Qué KPI detecta la gran caída? El subtítulo recuerda el patrón.
       return {
-        LEF: ['INTERNO', 'cae el LEF y arrastra', K.CATS.int.color],
-        GLY: ['PLANIF. / EXTERNA', 'LEF alto · GLY bajo', K.CATS.pe.color],
-        OSE: ['SIN PROGRAMAR', 'GLY alto · OSE bajo', K.CATS.ns.color],
-        OK: ['EXCELENTE', 'todo alto (≥ 90 %)', T.ok],
+        LEF: ['LEF', 'cae el LEF y arrastra', K.CATS.int.color],
+        GLY: ['GLY', 'LEF alto · GLY bajo', K.CATS.pe.color],
+        OSE: ['OSE', 'LEF y GLY altos · OSE bajo', K.CATS.ns.color],
+        OK: ['NINGUNO', 'turno excelente (≥ 90 %)', T.ok],
       };
     }
     // Acción: con quién se ataca la pérdida principal (izquierda, arriba, derecha).
@@ -922,14 +976,14 @@
     }[o];
   }
 
-  function drawDecision(s, ctx) {
+  function drawDecision(s, ctx, r) {
     const rc = PANEL.dec;
     const sh = s.shift;
-    let title = s.mode === 'kpi' ? '¿QUÉ KPI LA DETECTA?' : sh.phase === 'run' ? 'DIAGNÓSTICO DEL TURNO' : '¿CON QUIÉN LA ATACAS?';
+    let title = s.mode === 'kpi' ? '¿QUÉ KPI LA DETECTA?' : sh.phase === 'run' ? '¿QUÉ KPI DETECTA LA CAÍDA?' : '¿CON QUIÉN LA ATACAS?';
     if (sh.phase === 'done') title = 'RESULTADO DEL TURNO';
     panelTitle(ctx, rc, title);
     let help = '';
-    if (s.mode === 'diag') help = sh.phase === 'run' ? '¿Dónde está la gran caída? Puedes responder antes de que acabe el turno.' : sh.phase === 'action' ? 'Elige con quién atacar la pérdida principal.' : '';
+    if (s.mode === 'diag') help = sh.phase === 'run' ? 'Elige el KPI que detecta primero la gran caída, o NINGUNO si el turno fue excelente.' : sh.phase === 'action' ? 'Elige con quién atacar la pérdida principal.' : '';
     else help = sh.phase === 'run' ? 'Observa la línea: el reporte llega al final del turno.' : sh.phase === 'report' ? 'Clasifica la pérdida marcada: ¿qué KPI la detecta primero?' : '';
     if (help) D.paragraph(ctx, help, rc.x + 16, rc.y + 56, rc.w - 32, { size: 13, color: T.dim });
 
@@ -953,11 +1007,13 @@
     // Resultado del turno (modo diagnóstico).
     if (s.mode === 'diag' && sh.phase === 'done') {
       const ok = sh.diag === sh.type;
+      const none = !sh.diag;
       const d = K.DIAG[sh.type];
       const y = rc.y + 330;
-      D.panel(ctx, rc.x + 14, y, rc.w - 28, 74, { fill: ok ? T.okDark : '#3a1410', edge: ok ? T.ok : T.red, radius: 10 });
-      D.text(ctx, ok ? '✔ DIAGNÓSTICO CORRECTO' : '✖ DIAGNÓSTICO INCORRECTO', rc.x + 28, y + 26, { size: 16, weight: 800, color: ok ? T.ok : T.red });
-      D.text(ctx, `Era: ${d.label}`, rc.x + 28, y + 48, { size: 14, weight: 700, color: d.color });
+      const edge = ok ? T.ok : none ? T.warn : T.red;
+      D.panel(ctx, rc.x + 14, y, rc.w - 28, 74, { fill: ok ? T.okDark : none ? '#2a2018' : '#3a1410', edge, radius: 10 });
+      D.text(ctx, ok ? '✔ DIAGNÓSTICO CORRECTO' : none ? '⏱ SIN RESPUESTA A TIEMPO' : '✖ DIAGNÓSTICO INCORRECTO', rc.x + 28, y + 26, { size: 16, weight: 800, color: edge });
+      D.text(ctx, `Era: ${DIAG_KPI[sh.type]} · ${d.label}`, rc.x + 28, y + 48, { size: 14, weight: 700, color: d.color });
       D.text(ctx, `Atacar con: ${ownerLabel(sh.owner)}`, rc.x + 28, y + 66, { size: 12, color: T.ink });
     }
 
@@ -970,10 +1026,30 @@
       w = D.control(ctx, CTRL.view, rc.x + 16, ty + 54, { size: 13, color: ACCENT });
       D.text(ctx, 'Ver la línea / reportes', rc.x + 24 + w, ty + 59, { size: 14, weight: 700 });
     }
-    // Tiempo del turno.
-    const left = Math.max(0, SHIFT_S - sh.t);
-    D.text(ctx, `Tiempo para decidir: ${Math.ceil(left)} s`, rc.x + 16, rc.y + rc.h - 22, { size: 13, weight: 700, color: left < 5 ? T.red : T.dim });
-    D.progressBar(ctx, rc.x + 16, rc.y + rc.h - 14, rc.w - 32, 6, left / SHIFT_S, left < 5 ? T.red : ACCENT);
+    // Pie: simulación, tiempo para responder o Continuar.
+    if (sh.phase === 'done') {
+      const b = continueRect();
+      const pulse = 0.8 + 0.2 * Math.sin(r.t * 5);
+      D.panel(ctx, b.x, b.y, b.w, b.h, { fill: ACCENT, edge: ACCENT, radius: 10, glow: pulse > 0.9 ? ACCENT : null });
+      const last = s.index + 1 >= SHIFTS;
+      const label = last ? 'VER REPORTE FINAL' : 'CONTINUAR';
+      const w = D.control(ctx, { key: 'ENTER', pad: 'a' }, b.x + 12, b.y + b.h / 2, { size: 13, color: '#0e1a1e', keyInk: ACCENT });
+      D.text(ctx, label, b.x + w + 24, b.y + 27, { size: 17, weight: 800, color: '#0e1a1e' });
+      if (sh.timedOut) D.text(ctx, `sigue solo en ${Math.ceil(Math.max(0, sh.doneT))} s`, b.x + b.w - 12, b.y + 26, { size: 12, weight: 700, color: '#0e1a1e', align: 'right' });
+    } else if (!simDone(sh)) {
+      D.text(ctx, `Turno en marcha: 12 h en ${SIM_S} s · luego tienes ${s.answerTime} s`, rc.x + 16, rc.y + rc.h - 22, { size: 13, weight: 700, color: T.dim });
+      D.progressBar(ctx, rc.x + 16, rc.y + rc.h - 14, rc.w - 32, 6, sh.clock / K.HOURS, '#6e5a48');
+    } else {
+      const left = Math.max(0, s.answerTime - sh.wait);
+      const low = left <= 10;
+      D.text(ctx, `Tiempo para responder: ${Math.ceil(left)} s`, rc.x + 16, rc.y + rc.h - 22, { size: 13, weight: 700, color: low ? T.red : T.dim });
+      D.progressBar(ctx, rc.x + 16, rc.y + rc.h - 14, rc.w - 32, 6, left / s.answerTime, low ? T.red : ACCENT);
+    }
+  }
+
+  function continueRect() {
+    const rc = PANEL.dec;
+    return { x: rc.x + 16, y: rc.y + rc.h - 50, w: rc.w - 32, h: 40 };
   }
 
   function drawHelp(ctx) {
@@ -1053,13 +1129,14 @@
         ? [
             ['Diagnósticos correctos', `${st.diagOk} de ${SHIFTS}`, st.diagOk >= 5 ? T.ok : T.warn],
             ['Acciones bien dirigidas', `${st.actionOk} de ${SHIFTS}`, st.actionOk >= 5 ? T.ok : T.warn],
-            ['Turnos sin respuesta', String(st.unanswered), st.unanswered ? T.red : T.ok],
+            ['Turnos con tiempo agotado', `${st.timeouts} de ${SHIFTS} (${s.answerTime} s)`, st.timeouts ? T.red : T.ok],
             ['Llamadas para verificar', `${st.jokersUsed} de ${s.cfg.jokers}`, T.ink],
             ['Confusión más frecuente', conf ? `${conf[0]} (×${conf[1]})` : 'ninguna', conf ? T.red : T.ok],
             ['Puntuación de Calidad', `${score}/100`, D.rankColor(rank)],
           ]
         : [
             ...kpiRows,
+            ['Turnos con tiempo agotado', `${st.timeouts} de ${SHIFTS} (${s.answerTime} s)`, st.timeouts ? T.red : T.ok],
             ['Llamadas para verificar', `${st.jokersUsed} de ${s.cfg.jokers}`, T.ink],
             ['Confusión más frecuente', conf ? `${conf[0]} (×${conf[1]})` : 'ninguna', conf ? T.red : T.ok],
             ['Puntuación de Calidad', `${score}/100`, D.rankColor(rank)],
@@ -1095,7 +1172,7 @@
     });
   }
 
-  PF.Admin = { MODES, SHIFTS, SHIFT_S, DIFF, SLOTS };
+  PF.Admin = { MODES, SHIFTS, SIM_S, ANSWER_TIMES, REVEAL_S, DIFF, SLOTS };
   PF.Games = PF.Games || [];
   PF.Games.push({
     id: 'admin',
@@ -1105,19 +1182,23 @@
     tagline: 'Administra 6 turnos: lee el tablero y descubre dónde se pierden las horas.',
     accent: ACCENT,
     padRaw: true,
-    choice: {
-      key: 'mode',
-      title: 'MODO DE JUEGO',
-      values: [
-        { value: 'diag', label: 'Diagnóstico' },
-        { value: 'kpi', label: '¿Qué KPI cae?' },
-      ],
-      index: 0,
-    },
+    choices: [
+      {
+        key: 'mode',
+        title: 'MODO DE JUEGO',
+        values: [
+          { value: 'diag', label: 'Diagnóstico' },
+          { value: 'kpi', label: '¿Qué KPI cae?' },
+        ],
+        index: 0,
+      },
+      // Independiente de la dificultad: el juego no es de reflejos.
+      { key: 'answerTime', title: 'TIEMPO PARA RESPONDER', values: ANSWER_TIMES.map((v) => ({ value: v, label: `${v} s` })), index: 1 },
+    ],
     icon,
     howTo: [
-      '6 turnos de 12 h, cada uno en 20 s (2 min en total). Mismo numerador (EPT): LEF ≥ GLY ≥ OSE.',
-      'Diagnóstico: ¿la gran caída es interna, planificada/externa, sin programar… o el turno fue excelente? Luego, ¿con quién la atacas?',
+      '6 turnos de 12 h simulados en 6 s; luego tienes 30, 40 o 50 s para responder (tú eliges). Tras cada turno, lee la explicación y pulsa Continuar.',
+      'Diagnóstico: ¿qué KPI detecta la gran caída: LEF, GLY, OSE… o ninguno (turno excelente)? Luego, ¿con quién la atacas?',
       '¿Qué KPI cae?: al final del turno clasifica cada pérdida del reporte por el KPI que la detecta primero.',
       'Ver la línea muestra la causa real; Llamar y verificar corrige reportes dudosos (usos limitados).',
     ],

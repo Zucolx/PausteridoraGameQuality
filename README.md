@@ -26,7 +26,7 @@ Para que no estorben, los mensajes van **a un lado**:
 | 3 | **El Cazador de Riesgos** · Recorrido UV | Línea a oscuras: encontrar 5 focos de contaminación con linterna UV y limpiarlos con la herramienta correcta. |
 | 4 | **Línea en Paro** · Decisiones Bajo Presión | Aplicar el plan de reacción según cuánto lleva parada la línea, sin ceder a la presión de arrancar ya. |
 | 5 | **Control de UP** · Unidades de Pasteurización | Panel de control sin muñeco: mantener cada lote entre 24 y 30 UP (ideal 26) con la temperatura y decidir con la llave de paso si va a la llenadora o al descarte. Duración ajustable de 40 a 60 s. |
-| 6 | **Supervisor de Turno** · LEF · GLY · OSE | Administración del turno: leer el tablero de LEF, GLY y OSE para descubrir dónde se pierden las horas (modo *Diagnóstico*) o clasificar cada pérdida del reporte por el KPI que la detecta primero (modo *¿Qué KPI cae?*). 6 turnos de 20 s: 2 min máximo. |
+| 6 | **Supervisor de Turno** · LEF · GLY · OSE | Administración del turno: leer el tablero de LEF, GLY y OSE para descubrir dónde se pierden las horas (modo *Diagnóstico*) o clasificar cada pérdida del reporte por el KPI que la detecta primero (modo *¿Qué KPI cae?*). 6 turnos de 12 h simulados en 6 s, con 30, 40 o 50 s para responder cada uno. |
 
 ## Cómo jugar
 
@@ -199,9 +199,18 @@ referencia (1 UP por minuto) y 1,393 el factor derivado de z = 10 °C.
 ### 6 · Supervisor de Turno
 
 El objetivo es aprender cómo se relacionan LEF, GLY y OSE, qué las afecta y qué
-factores están en el poder de la línea. Cada partida son **6 turnos de 12 h**
-simulados en **20 s** cada uno (2 min como máximo). El modo se elige en la pantalla de
-inicio, junto a la dificultad.
+factores están en el poder de la línea. Cada partida son **6 turnos de 12 h**,
+cada uno simulado en **6 s**. No es un juego de reflejos:
+
+- Al terminar la simulación tienes **30, 40 o 50 s para responder**. Ese tiempo se
+  elige en la pantalla de inicio, aparte de la dificultad.
+- El juego espera tu respuesta. Si se acaba el tiempo, lo que falte cuenta como fallo,
+  se muestra la solución unos segundos y el juego pasa solo al siguiente turno.
+- Al responder, la explicación queda en pantalla hasta que pulsas **Continuar**
+  (Enter / ✕ / A).
+
+En la pantalla de inicio eliges también el modo. Con ↑ ↓ (o la cruceta) pasas de la
+dificultad a las filas de opciones, y con ← → cambias la opción.
 
 **Modelo.** Las tres métricas comparten el mismo numerador, el **EPT** (tiempo de
 producción efectiva), y difieren en el denominador:
@@ -233,15 +242,16 @@ primero.
   distorsionado: el LEF, que sube artificialmente.
 
 **Modo Diagnóstico de turno.** El tablero muestra LEF, GLY y OSE en vivo, acumulados
-hasta la hora actual. Cuando ves dónde está la gran brecha, respondes en el rombo de
-botones, que imita la cara del mando. Este modo usa solo los ítems de un KPI (1-18).
+hasta la hora actual. La pregunta es **¿qué KPI detecta la gran caída?** Se responde en
+el rombo de botones, que imita la cara del mando. Puedes responder antes de que acabe
+la simulación. Este modo usa solo los ítems de un KPI (1-18).
 
-| Botón | Respuesta | Patrón |
-|---|---|---|
-| ▲ (↑ / △ / Y) | Interno | LEF bajo (arrastra a GLY y OSE) |
-| ◀ (← / □ / X) | Planificada / externa | LEF alto, GLY bajo |
-| ▶ (→ / ○ / B) | Sin programar | LEF y GLY altos, OSE bajo |
-| ▼ (↓ / ✕ / A) | Excelente | todo alto (≥ 90 %) |
+| Botón | Respuesta | Patrón | Causa |
+|---|---|---|---|
+| ▲ (↑ / △ / Y) | LEF | LEF bajo (arrastra a GLY y OSE) | problema interno |
+| ◀ (← / □ / X) | GLY | LEF alto, GLY bajo | planificada o externa |
+| ▶ (→ / ○ / B) | OSE | LEF y GLY altos, OSE bajo | sin programar |
+| ▼ (↓ / ✕ / A) | Ninguno | todo alto (≥ 90 %) | turno excelente |
 
 Después viene la segunda pregunta, **"¿con quién la atacas?"**:
 
@@ -253,7 +263,7 @@ Después viene la segunda pregunta, **"¿con quién la atacas?"**:
 
 Diagnóstico +100, acción +50.
 
-**Modo ¿Qué KPI cae?** El turno corre unos segundos con la línea a la vista. Al final
+**Modo ¿Qué KPI cae?** El turno corre 6 s con la línea a la vista. Al final
 llega el **reporte de fin de turno** y cada pérdida se clasifica por el primer KPI que
 la detecta, con el mismo rombo: ▲ LEF, ◀ GLY, ▶ OSE y ▼ "los tres" (error de dato).
 Cada acierto suma +50. En Normal y Difícil aparecen los ítems que pueden caer en más
