@@ -120,7 +120,7 @@
     backdrop(ctx, t);
     glowText(ctx, 'LO QUE NO SE VE,', V.width / 2, 92, 54, T.ink, T.orange);
     glowText(ctx, 'TAMBIÉN SE LIMPIA', V.width / 2, 150, 60, T.orange, T.orangeDark);
-    D.text(ctx, 'Colección de juegos de calidad · partidas cortas, de 40 segundos a 2 minutos', V.width / 2, 188, { size: 19, weight: 600, color: T.dim, align: 'center' });
+    D.text(ctx, 'Colección de juegos de calidad · partidas cortas para aprender jugando', V.width / 2, 188, { size: 19, weight: 600, color: T.dim, align: 'center' });
 
     const cards = menuCards(games.length);
     games.forEach((game, i) => {
@@ -144,8 +144,11 @@
       ctx.restore();
       D.keycap(ctx, String(i + 1), x + 30, y + 30, { size: 15, color: on ? game.accent : '#5a4030' });
 
-      const ts = c.w < 250 ? 23 : 27;
+      // Con muchas tarjetas, el título se achica si una palabra no cabe en el ancho.
+      let ts = c.w < 250 ? 23 : 27;
       ctx.font = D.font(ts, 800);
+      const words = game.title.toUpperCase().split(' ');
+      while (ts > 16 && words.some((w) => ctx.measureText(w).width > c.w - 32)) ctx.font = D.font(--ts, 800);
       const lines = D.wrap(ctx, game.title.toUpperCase(), c.w - 32);
       lines.forEach((l, j) => D.text(ctx, l, x + 16, y + 196 + j * (ts + 1), { size: ts, weight: 800, color: on ? T.ink : T.dim }));
       const ty = y + 196 + lines.length * (ts + 1);

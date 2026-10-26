@@ -15,7 +15,7 @@ const press = (s, ...keys) => tick(s, DT, input({ pressed: keys }));
 const hold = (s, seconds) => tick(s, seconds, input({ space: true }));
 
 test('la colección registra los seis juegos con sus tres dificultades', () => {
-  assert.deepEqual(PF.Games.map((g) => g.id).sort(), ['admin', 'cip', 'hunter', 'pasteurizer', 'pu', 'stop']);
+  assert.deepEqual(PF.Games.map((g) => g.id).sort(), ['admin', 'cip', 'hunter', 'pasteurizer', 'pu', 'reaction', 'stop']);
   for (const g of PF.Games) {
     for (const d of ['facil', 'normal', 'dificil']) {
       assert.ok(g.difficulties[d].length >= 2, `${g.id} ${d}`);
@@ -518,4 +518,143 @@ test('Supervisor: la ayuda congela el turno y el modo se elige en la pantalla de
   const t0 = s.shift.t;
   tick(s, 2);
   assert.equal(s.shift.t, t0);
+});
+
+// ------------------------------------------------------------ Guía Rápida de Reacción
+
+const RX = PF.Reaction;
+// Conecta un punto haciendo clic sobre él.
+const linkDot = (s, id) => {
+  const d = s.dots.find((x) => x.id === id);
+  assert.ok(d, `el punto ${id} está en el tablero`);
+  s.update(DT, input({ clicks: [{ x: d.x, y: d.y }] }));
+};
+const finishRoute = (s) => {
+  for (const id of RX.ROUTES[s.sit].slice(s.step)) linkDot(s, id);
+};
+
+test('Reacción: las rutas son las de la guía y cada punto lleva su texto completo', () => {
+  assert.deepEqual(RX.ROUTES, {
+    S1: ['COM', 'DEL', 'EPP', 'KIT', 'SOP260'],
+    S2: ['COM', 'LAV', 'DUC', 'MSDS'],
+    S3: ['COM', 'ALA', 'EXT', 'GAB', 'SOP092'],
+    S4: ['COM', 'SIR', 'SAL', 'PTO', 'SOP085'],
+  });
+  assert.equal(Object.keys(RX.ITEMS).length, 17);
+  assert.equal(RX.ITEMS.EPP.text, 'EPP’s (traje, guantes, protección respiratoria)');
+  assert.equal(RX.ITEMS.SOP260.text, 'ACADIA QUI-ENV-SOP-260');
+  assert.equal(RX.ITEMS.LAV.text, 'Lavaojos (mín. 15 min)');
+  assert.equal(RX.SITUATIONS.S4.name, 'Emergencia (sismo / incidente mayor)');
+  for (const [id, it] of Object.entries(RX.ITEMS)) {
+    assert.ok(it.text.length > id.length && it.info, id);
+    assert.ok(RX.situationsOf(id).length >= 1, `${id} pertenece a alguna situación`);
+  }
+  assert.ok(!Object.values(RX.ROUTES).some((r) => r.includes('DET')), 'el detector de humo no es un paso');
+});
+
+test('Reacción: unir los puntos en orden completa las 4 rutas con 100 puntos', () => {
+  const s = game('reaction').create('normal', { seed: 7 });
+  assert.equal(s.dots.length, 17, 'en Normal están los 17 puntos');
+  const seen = [];
+  while (!s.over) {
+    seen.push(s.sit);
+    finishRoute(s);
+    assert.equal(s.phase, 'summary', 'la ruta completa queda a la vista');
+    assert.equal(s.bubble.cur.title, '¡Ruta completa!');
+    tick(s, 30);
+    assert.equal(s.phase, 'summary', 'espera a que pulses Continuar');
+    press(s, 'confirm');
+  }
+  assert.deepEqual(seen.sort(), ['S1', 'S2', 'S3', 'S4']);
+  const rep = s.report();
+  assert.equal(rep.score, 100);
+  assert.match(rep.headline, /4 de 4 rutas/);
+});
+
+test('Reacción: un punto equivocado explica por qué con los textos completos', () => {
+  const s = game('reaction').create('dificil', { seed: 3 });
+  const route = RX.ROUTES[s.sit];
+  // Lo primero siempre es comunicar.
+  linkDot(s, route[1]);
+  assert.equal(s.bubble.cur.kind, 'error');
+  assert.match(s.bubble.cur.message, /Comunicación \(dar aviso\)/);
+  linkDot(s, 'COM');
+  assert.equal(s.step, 1);
+  // Un ítem de otra ruta: en Difícil no se revela el paso correcto hasta el tercer error.
+  const other = Object.keys(RX.ROUTES).find((k) => k !== s.sit);
+  const foreign = RX.ROUTES[other][1];
+  linkDot(s, foreign);
+  assert.match(s.bubble.cur.message, new RegExp(`es de la ruta «${RX.SITUATIONS[other].name.replace(/[()]/g, '.')}»`));
+  assert.doesNotMatch(s.bubble.cur.message, /Después de/);
+  linkDot(s, foreign);
+  linkDot(s, foreign);
+  assert.match(s.bubble.cur.message, new RegExp(`Después de «Comunicación \\(dar aviso\\)» va «${RX.ITEMS[route[1]].text.replace(/[()/]/g, '.')}»`));
+  assert.equal(s.stats.errors, 4);
+  assert.equal(s.stats.perSit[s.sit].errors, 4);
+  assert.equal(s.cfg.pictos, false, 'en Difícil, solo texto');
+});
+
+test('Reacción: Fácil muestra la ruta y señuelos y revela el paso al primer error', () => {
+  const s = game('reaction').create('facil', { seed: 2 });
+  const route = RX.ROUTES[s.sit];
+  const ids = s.dots.map((d) => d.id);
+  for (const id of route) assert.ok(ids.includes(id));
+  assert.equal(s.dots.length, route.length + (RX.EXTRAS[s.sit] || []).length + 3);
+  linkDot(s, 'COM');
+  const wrong = ids.find((id) => !route.includes(id));
+  linkDot(s, wrong);
+  assert.match(s.bubble.cur.message, /Después de «Comunicación \(dar aviso\)»/);
+});
+
+test('Reacción: el detector de humo y los SOP explican por qué no van', () => {
+  let s = null;
+  for (let seed = 1; seed < 50 && !s; seed++) {
+    const g = game('reaction').create('normal', { seed });
+    if (g.sit === 'S3') s = g;
+  }
+  linkDot(s, 'COM');
+  linkDot(s, 'DET');
+  assert.match(s.bubble.cur.message, /Detector de humo» detecta por sí solo/);
+  linkDot(s, 'SOP085');
+  assert.match(s.bubble.cur.message, /ACADIA QUI-SEG-SOP-0085» es el procedimiento de «Emergencia \(sismo \/ incidente mayor\)»/);
+  let c = null;
+  for (let seed = 1; seed < 50 && !c; seed++) {
+    const g = game('reaction').create('normal', { seed });
+    if (g.sit === 'S2') c = g;
+  }
+  linkDot(c, 'COM');
+  linkDot(c, 'SOP260');
+  assert.match(c.bubble.cur.message, /no tiene procedimiento ACADIA en la guía: su ruta termina en «Hoja de seguridad MSDS»/);
+});
+
+test('Reacción: flechas o cruceta mueven el cursor y ✕/A conecta; la guía pausa y cuesta puntos', () => {
+  const s = game('reaction').create('normal', { seed: 11 });
+  const from = s.dots[s.cursor];
+  press(s, 'right');
+  assert.ok(s.dots[s.cursor].x > from.x, 'el cursor fue a la derecha');
+  const comIdx = s.dots.findIndex((d) => d.id === 'COM');
+  s.cursor = comIdx;
+  s.update(DT, input({ pad: { pressed: ['a'] } }));
+  assert.equal(s.step, 1);
+  assert.equal(s.stats.points, 10);
+  s.update(DT, input({ pad: { pressed: ['select'] } }));
+  assert.equal(s.help, true);
+  assert.equal(s.stats.points, 5, 'en Normal la guía resta 5 puntos');
+  const left = s.timeLeft;
+  tick(s, 5);
+  assert.equal(s.timeLeft, left, 'la guía congela el tiempo');
+  s.update(DT, input({ pad: { pressed: ['b'] } }));
+  assert.equal(s.help, false);
+});
+
+test('Reacción: si se acaba el tiempo, el juego termina y las rutas pendientes cuentan', () => {
+  const s = game('reaction').create('dificil', { seed: 4 });
+  assert.equal(s.duration, 180);
+  finishRoute(s);
+  press(s, 'confirm');
+  tick(s, 181);
+  assert.equal(s.over, true);
+  const rep = s.report();
+  assert.ok(rep.score > 0 && rep.score < 40);
+  assert.equal(rep.rows.filter((r) => r[1] === 'sin terminar').length, 3);
 });

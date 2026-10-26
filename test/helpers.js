@@ -16,6 +16,8 @@ require('../src/games/stop.js');
 require('../src/games/pu.js');
 require('../src/content/kpi.js');
 require('../src/games/admin.js');
+require('../src/content/reaction.js');
+require('../src/games/reaction.js');
 
 const PF = globalThis.PF;
 const C = PF.CONFIG;

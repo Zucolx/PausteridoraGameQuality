@@ -1,6 +1,6 @@
 # Lo que no se ve, también se limpia
 
-Colección de seis juegos cortos sobre calidad y gestión en el envasado de cerveza. Usa la
+Colección de siete juegos cortos sobre calidad, gestión y seguridad en el envasado de cerveza. Usa la
 estética del afiche (negros, naranjas quemados, latón steampunk y toques de Halloween).
 Cada juego tiene **tres dificultades** (Fácil, Normal y Difícil) y termina con un
 **Reporte de Calidad** con rango S/A/B/C. Se juega con **teclado y ratón o con mando de
@@ -27,6 +27,7 @@ Para que no estorben, los mensajes van **a un lado**:
 | 4 | **Línea en Paro** · Decisiones Bajo Presión | Aplicar el plan de reacción según cuánto lleva parada la línea, sin ceder a la presión de arrancar ya. |
 | 5 | **Control de UP** · Unidades de Pasteurización | Panel de control sin muñeco: mantener cada lote entre 24 y 30 UP (ideal 26) con la temperatura y decidir con la llave de paso si va a la llenadora o al descarte. Duración ajustable de 40 a 60 s. |
 | 6 | **Supervisor de Turno** · LEF · GLY · OSE | Administración del turno: leer el tablero de LEF, GLY y OSE para descubrir dónde se pierden las horas (modo *Diagnóstico*) o clasificar cada pérdida del reporte por el KPI que la detecta primero (modo *¿Qué KPI cae?*). 6 turnos de 12 h simulados en 6 s, con 30, 40 o 50 s para responder cada uno. |
+| 7 | **Guía Rápida de Reacción** · Une los puntos | Unir los puntos en orden para armar la ruta de reacción de cada emergencia: derrame de sustancia química, contacto con sustancia química, conato de incendio y emergencia, hasta su procedimiento ACADIA. |
 
 ## Cómo jugar
 
@@ -286,6 +287,49 @@ programado → LET → EPT), la regla rápida, cuatro turnos de ejemplo y qué e
 poder de cada uno. El reporte final muestra los aciertos por KPI y la confusión más
 frecuente.
 
+### 7 · Guía Rápida de Reacción
+
+El objetivo es que la gente de la planta aprenda los planes de reacción del afiche
+"Guía Rápida de Reacción". Cada situación es un dibujo de "une los puntos": desde la
+situación se unen, en orden, los pasos de su ruta hasta el procedimiento. Las
+situaciones salen en orden aleatorio.
+
+Los ID (COM, DEL…) son solo referencia interna: en el juego, cada punto lleva el texto
+completo y un dibujo del equipo. El contenido está en `src/content/reaction.js`.
+
+| Situación | Ruta correcta |
+|---|---|
+| Derrame de sustancia química | Comunicación (dar aviso) → Delimitación (conos / barreras) → EPP’s (traje, guantes, protección respiratoria) → Uso de kit antiderrames → ACADIA QUI-ENV-SOP-260 |
+| Contacto con sustancia química | Comunicación (dar aviso) → Lavaojos (mín. 15 min) → Ducha de emergencia (mín. 15 min) → Hoja de seguridad MSDS |
+| Conato de incendio | Comunicación (dar aviso) → Pulsador de alarma “FIRE” → Extintor (técnica PASS) → Gabinete / manguera contra incendio → ACADIA QUI-SEG-SOP-0092 |
+| Emergencia (sismo / incidente mayor) | Comunicación (dar aviso) → Alarma / sirena de evacuación → Salida de emergencia (ruta señalizada) → Punto de encuentro (conteo de personal) → ACADIA QUI-SEG-SOP-0085 |
+
+El **detector de humo** aparece en la guía junto al conato de incendio, pero no es un
+paso de la ruta: detecta por sí solo. En el tablero funciona como señuelo y, si lo
+eliges, se explica por qué no va.
+
+**Cómo se juega.**
+
+- Mueve el cursor entre los puntos con ↑ ↓ ← → (o WASD, la cruceta o el stick).
+- Conecta con Enter, Espacio, ✕ / A o un clic.
+- Cada acierto suma 10 puntos y muestra qué se hace en ese paso.
+- Cada error resta 3 puntos y muestra una burbuja "¡Esto no va así!" que explica el
+  motivo: toda ruta empieza por la comunicación, el paso es de otra situación, el
+  procedimiento ACADIA es de otra situación, o el paso sí va pero más adelante.
+- Al completar una ruta, se ve entera, como una fila del afiche, con lo que se hace en
+  cada paso. Queda en pantalla hasta pulsar Continuar.
+- **La guía completa** (H / SHARE / VIEW) muestra el afiche con las cuatro rutas y
+  pausa el tiempo.
+
+| Dificultad | Tablero | Ayuda | Tiempo y guía |
+|---|---|---|---|
+| Fácil | solo los pasos de la ruta y 3 señuelos | el paso correcto se dice y parpadea al primer error | 5 min · guía sin costo |
+| Normal | los 17 puntos | pista tras 2 errores en el mismo paso | 4 min · cada consulta resta 5 puntos |
+| Difícil | los 17 puntos, solo texto, sin dibujos ni número de pasos | pista tras 3 errores en el mismo paso | 3 min · cada consulta resta 10 puntos |
+
+El Reporte de Calidad muestra los errores en cada situación, las consultas a la guía y
+el tiempo usado.
+
 ## Estructura
 
 ```
@@ -300,7 +344,8 @@ src/core/world.js       movimiento cenital con colisiones y estaciones
 src/core/screens.js     menú, selector de dificultad, pausa y Reporte de Calidad
 src/content/manual.js   contenido técnico de los juegos (revisar con el manual)
 src/content/kpi.js      LEF, GLY y OSE: fórmulas (EPT), catálogo de 24 pérdidas y explicaciones
-src/games/*.js          un archivo por juego (CIP, cazador, paro, control de UP, supervisor, adaptador pasteurizadora)
+src/content/reaction.js Guía Rápida de Reacción: situaciones, puntos con su texto completo y rutas
+src/games/*.js          un archivo por juego (CIP, cazador, paro, control de UP, supervisor, reacción, adaptador pasteurizadora)
 src/config.js, sim.js, minigames.js, render.js   motor de la Pasteurizadora Flash
 src/audio.js            efectos sintetizados con WebAudio
 src/main.js             teclado, ratón, mando, bucle y pantallas
