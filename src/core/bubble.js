@@ -260,11 +260,12 @@
   // Barra horizontal de mensajes (para juegos sin barra lateral).
   function bar(ctx, rect, { bubble = null, notices = [], t = 0, split = 0.6 } = {}) {
     D.panel(ctx, rect.x, rect.y, rect.w, rect.h, { fill: '#100906', edge: '#2e1d13', radius: 10 });
-    const lw = Math.round(rect.w * split);
+    const n = notices.filter(Boolean)[0];
+    // Sin avisos, la burbuja usa todo el ancho para que quepan las explicaciones largas.
+    const lw = n ? Math.round(rect.w * split) : rect.w;
     const cur = bubble && bubble.cur;
     if (cur) cloud(ctx, cur, rect.x + 8, rect.y + 8, lw - 16, rect.h - 16, t, { maxLines: 2, compact: true });
     else D.text(ctx, 'Aquí aparecen los avisos del operario', rect.x + 20, rect.y + rect.h / 2 + 5, { size: 14, color: D.T.faint });
-    const n = notices.filter(Boolean)[0];
     if (n) {
       const nx = rect.x + lw;
       const nw = rect.w - lw - 8;

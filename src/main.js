@@ -21,7 +21,7 @@
   let screen = 'menu';
   let sel = 0;
   let diffSel = 1;
-  let durSel = {};
+  let choiceSel = {};
   let inst = null;
   let report = null;
   let isRecord = false;
@@ -40,7 +40,7 @@
     ArrowRight: [1, 0],
   };
   const DIR = { KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right' };
-  const NAMED = { KeyE: 'interact', Escape: 'cancel', KeyQ: 'cancel', Space: 'space', Enter: 'confirm', NumpadEnter: 'confirm', Tab: 'tab', KeyY: 'y', KeyX: 'x', KeyH: 'help' };
+  const NAMED = { KeyE: 'interact', Escape: 'cancel', KeyQ: 'cancel', Space: 'space', Enter: 'confirm', NumpadEnter: 'confirm', Tab: 'tab', KeyY: 'y', KeyX: 'x', KeyH: 'help', KeyC: 'joker', KeyV: 'view' };
   const DIGIT = { Digit1: '1', Digit2: '2', Digit3: '3', Digit4: '4', Numpad1: '1', Numpad2: '2', Numpad3: '3', Numpad4: '4' };
   const PREVENT = new Set(['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 
@@ -68,23 +68,28 @@
     return D.DIFFICULTIES[diffSel].id;
   }
 
-  // Duración elegida para los juegos que la permiten (por defecto la más larga).
-  function duration() {
-    const list = game().durations;
-    if (!list) return null;
-    const i = durSel[game().id] ?? list.length - 1;
-    return list[Math.max(0, Math.min(list.length - 1, i))];
+  // Opción extra del juego (duración, modo…): valor elegido o el de por defecto.
+  function choiceIndex() {
+    const c = S.choiceOf(game());
+    if (!c) return -1;
+    const i = choiceSel[game().id] ?? c.index;
+    return Math.max(0, Math.min(c.values.length - 1, i));
   }
 
-  function setDuration(delta) {
-    const list = game().durations;
-    if (!list) return;
-    const i = durSel[game().id] ?? list.length - 1;
-    durSel[game().id] = Math.max(0, Math.min(list.length - 1, i + delta));
+  function choiceValue() {
+    const c = S.choiceOf(game());
+    return c ? c.values[choiceIndex()].value : null;
+  }
+
+  function moveChoice(delta) {
+    const c = S.choiceOf(game());
+    if (!c) return;
+    choiceSel[game().id] = Math.max(0, Math.min(c.values.length - 1, choiceIndex() + delta));
   }
 
   function startGame() {
-    inst = game().create(diffId(), { duration: duration() });
+    const c = S.choiceOf(game());
+    inst = game().create(diffId(), c ? { [c.key]: choiceValue() } : {});
     report = null;
     held.clear();
     pressed = [];
@@ -134,8 +139,8 @@
     } else if (screen === 'setup') {
       if (action === 'up') diffSel = Math.max(0, diffSel - 1);
       else if (action === 'down') diffSel = Math.min(2, diffSel + 1);
-      else if (action === 'left') setDuration(-1);
-      else if (action === 'right') setDuration(1);
+      else if (action === 'left') moveChoice(-1);
+      else if (action === 'right') moveChoice(1);
       else if (action === 'digit' && digit <= 3) {
         diffSel = digit - 1;
         startGame();
@@ -224,13 +229,13 @@
         screen = 'setup';
       }
     } else if (screen === 'setup') {
-      const compact = !!game().durations;
-      const i = S.diffCards(compact).findIndex((c) => inside(p, c));
-      const chip = compact ? S.durationChips(game().durations).findIndex((c) => inside(p, c)) : -1;
+      const choice = S.choiceOf(game());
+      const i = S.diffCards(!!choice).findIndex((c) => inside(p, c));
+      const chip = choice ? S.choiceChips(choice).findIndex((c) => inside(p, c)) : -1;
       if (i >= 0) {
         if (i === diffSel) startGame();
         else diffSel = i;
-      } else if (chip >= 0) durSel[game().id] = chip;
+      } else if (chip >= 0) choiceSel[game().id] = chip;
       else if (inside(p, S.playButton())) startGame();
     } else if (screen === 'play') {
       clicks.push(p);
@@ -327,7 +332,7 @@
     } else {
       D.begin(r);
       if (screen === 'menu') S.drawMenu(ctx, r.t, games, sel, records);
-      else if (screen === 'setup') S.drawSetup(ctx, r.t, game(), diffSel, records, duration());
+      else if (screen === 'setup') S.drawSetup(ctx, r.t, game(), diffSel, records, choiceValue());
       else if (screen === 'report') S.drawReport(ctx, r.t, game(), diffId(), report, (records[game().id] || {})[diffId()], isRecord);
     }
     requestAnimationFrame(frame);
@@ -342,10 +347,12 @@
       return screen;
     },
     games,
-    play(id, diff = 'normal', dur = null) {
+    // value: duración (Control de UP) o modo (Supervisor de Turno).
+    play(id, diff = 'normal', value = null) {
       sel = games.findIndex((g) => g.id === id);
       diffSel = D.DIFFICULTIES.findIndex((d) => d.id === diff);
-      if (dur && game().durations) durSel[id] = game().durations.indexOf(dur);
+      const c = S.choiceOf(game());
+      if (value != null && c) choiceSel[id] = c.values.findIndex((v) => v.value === value);
       startGame();
     },
   };

@@ -23,11 +23,26 @@
     return D.DIFFICULTIES.map((d, i) => ({ id: d.id, x: 736, y: 140 + i * step, w: 504, h }));
   }
 
-  function durationChips(list) {
-    const w = 56;
+  // Opción extra del juego (duración en Control de UP, modo en Supervisor de Turno).
+  // game.choice = { key, title, values: [{ value, label }], index } (índice por defecto).
+  function choiceOf(game) {
+    if (game.choice) return game.choice;
+    if (game.durations) {
+      return { key: 'duration', title: 'DURACIÓN DEL TURNO', values: game.durations.map((v) => ({ value: v, label: `${v} s` })), index: game.durations.length - 1 };
+    }
+    return null;
+  }
+
+  function choiceChips(choice) {
     const gap = 8;
-    const x0 = 736 + 504 - (list.length * w + (list.length - 1) * gap);
-    return list.map((sec, i) => ({ sec, x: x0 + i * (w + gap), y: 548, w, h: 44 }));
+    const widths = choice.values.map((v) => Math.max(56, v.label.length * 11 + 24));
+    const total = widths.reduce((a, b) => a + b, 0) + gap * (widths.length - 1);
+    let x = 736 + 504 - total;
+    return choice.values.map((v, i) => {
+      const c = { value: v.value, label: v.label, x, y: 548, w: widths[i], h: 44 };
+      x += widths[i] + gap;
+      return c;
+    });
   }
 
   function playButton() {
@@ -98,7 +113,7 @@
     backdrop(ctx, t);
     glowText(ctx, 'LO QUE NO SE VE,', V.width / 2, 92, 54, T.ink, T.orange);
     glowText(ctx, 'TAMBIÉN SE LIMPIA', V.width / 2, 150, 60, T.orange, T.orangeDark);
-    D.text(ctx, 'Colección de juegos de calidad · turnos cortos de 40 a 60 segundos', V.width / 2, 188, { size: 19, weight: 600, color: T.dim, align: 'center' });
+    D.text(ctx, 'Colección de juegos de calidad · partidas cortas, de 40 segundos a 2 minutos', V.width / 2, 188, { size: 19, weight: 600, color: T.dim, align: 'center' });
 
     const cards = menuCards(games.length);
     games.forEach((game, i) => {
@@ -127,7 +142,10 @@
       const lines = D.wrap(ctx, game.title.toUpperCase(), c.w - 32);
       lines.forEach((l, j) => D.text(ctx, l, x + 16, y + 196 + j * (ts + 1), { size: ts, weight: 800, color: on ? T.ink : T.dim }));
       const ty = y + 196 + lines.length * (ts + 1);
-      D.text(ctx, game.subtitle, x + 16, ty, { size: 16, weight: 700, color: game.accent });
+      let ss = 16;
+      ctx.font = D.font(ss, 700);
+      while (ctx.measureText(game.subtitle).width > c.w - 32 && ss > 11) ctx.font = D.font(--ss, 700);
+      D.text(ctx, game.subtitle, x + 16, ty, { size: ss, weight: 700, color: game.accent });
       D.paragraph(ctx, game.tagline, x + 16, ty + 26, c.w - 32, { size: 15, weight: 500, color: on ? T.ink : T.faint, maxLines: 3 });
 
       // Récords por dificultad.
@@ -167,7 +185,7 @@
     return `Mando ${type === 'ps' ? 'PlayStation' : 'Xbox'} conectado · los botones en pantalla se adaptan al mando`;
   }
 
-  function drawSetup(ctx, t, game, diffSel, records, duration) {
+  function drawSetup(ctx, t, game, diffSel, records, choiceValue) {
     backdrop(ctx, t, game.accent);
     D.panel(ctx, 40, 40, 670, 652, { fill: '#160d09', edge: '#3a2418', radius: 16 });
     ctx.save();
@@ -205,7 +223,8 @@
 
     D.text(ctx, 'ELIGE LA DIFICULTAD', 736, 120, { size: 20, weight: 800, color: T.ink });
     const rec = records[game.id] || {};
-    const compact = !!game.durations;
+    const choice = choiceOf(game);
+    const compact = !!choice;
     diffCards(compact).forEach((c, i) => {
       const d = D.DIFFICULTIES[i];
       const on = i === diffSel;
@@ -227,13 +246,15 @@
         D.text(ctx, b, c.x + 44, c.y + by + j * step, { size: compact ? 15 : 16, weight: 600, color: on ? T.ink : T.dim });
       });
     });
-    if (compact) {
-      D.text(ctx, 'DURACIÓN DEL TURNO', 736, 576, { size: 17, weight: 800, color: T.ink });
+    let chosen = null;
+    if (choice) {
+      D.text(ctx, choice.title, 736, 576, { size: 17, weight: 800, color: T.ink });
       D.hints(ctx, [[{ key: '← →', pad: 'dpadLR' }, 'cambiar']], 736, 602, { size: 12, ink: T.dim });
-      for (const c of durationChips(game.durations)) {
-        const on = c.sec === duration;
+      for (const c of choiceChips(choice)) {
+        const on = c.value === choiceValue;
+        if (on) chosen = c.label;
         D.panel(ctx, c.x, c.y, c.w, c.h, { fill: on ? game.accent : '#140c09', edge: on ? game.accent : '#3a2418', radius: 10, glow: on ? game.accent : null });
-        D.text(ctx, `${c.sec} s`, c.x + c.w / 2, c.y + 29, { size: 19, weight: 800, color: on ? '#170e0a' : T.dim, align: 'center' });
+        D.text(ctx, c.label, c.x + c.w / 2, c.y + 29, { size: 19, weight: 800, color: on ? '#170e0a' : T.dim, align: 'center' });
       }
     }
     const b = playButton();
@@ -246,9 +267,9 @@
     D.roundRect(ctx, b.x, b.y, b.w, b.h, 12);
     ctx.fill();
     ctx.restore();
-    const label = `▶  JUGAR EN ${d.label}${duration ? ` · ${duration} s` : ''}`;
+    const label = `▶  JUGAR EN ${d.label}${chosen ? ` · ${chosen}` : ''}`;
     D.text(ctx, label, b.x + 24, b.y + 37, { size: 24, weight: 800, color: '#170e0a' });
-    D.control(ctx, { key: 'ENTER', pad: 'a' }, b.x + b.w - 90, b.y + b.h / 2, { size: 16, color: '#170e0a' });
+    D.control(ctx, { key: 'ENTER', pad: 'a' }, b.x + b.w - 90, b.y + b.h / 2, { size: 16, color: '#170e0a', keyInk: d.color });
     D.hints(
       ctx,
       [
@@ -369,5 +390,5 @@
     );
   }
 
-  PF.Screens = { menuCards, diffCards, durationChips, playButton, drawMenu, drawSetup, drawPause, drawReport };
+  PF.Screens = { menuCards, diffCards, choiceOf, choiceChips, playButton, drawMenu, drawSetup, drawPause, drawReport };
 })();
