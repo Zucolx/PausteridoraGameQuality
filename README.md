@@ -3,8 +3,9 @@
 Colección de siete juegos cortos sobre calidad, gestión y seguridad en el envasado de cerveza. Usa la
 estética del afiche (negros, naranjas quemados, latón steampunk y toques de Halloween).
 Cada juego tiene **tres dificultades** (Fácil, Normal y Difícil) y termina con un
-**Reporte de Calidad** con rango S/A/B/C. Se juega con **teclado y ratón o con mando de
-PlayStation o Xbox**: los botones que se ven en pantalla cambian solos según el mando.
+**Reporte de Calidad** con rango S/A/B/C. Se juega con **teclado y ratón, con mando de
+PlayStation o Xbox, o con pantallas táctiles** (móviles, tabletas y pantallas grandes tipo
+TV): los botones que se ven en pantalla cambian solos según cómo se esté jugando.
 
 Cuando el jugador se equivoca aparece una **burbuja de pensamiento** que dice **"¡Esto
 no va así!"** y explica el porqué, por ejemplo *"El agua caliente para sanitizar debe
@@ -32,7 +33,7 @@ Para que no estorben, los mensajes van **a un lado**:
 ## Cómo jugar
 
 **Sin conexión:** descarga [`dist/lo-que-no-se-ve.html`](dist/lo-que-no-se-ve.html) y
-ábrelo con doble clic en cualquier navegador moderno. Es un único archivo (~380 KB) con
+ábrelo con doble clic en cualquier navegador moderno. Es un único archivo (~500 KB) con
 el código y las fuentes incrustados: no pide nada a internet, así que se puede copiar a
 un USB o mandar por correo.
 
@@ -47,8 +48,9 @@ pnpm start          # http://localhost:8080
 Flujo: **menú de juegos** (← → o ratón) → **dificultad** (↑ ↓, 1-3 o clic: cada tarjeta
 explica qué cambia; en Control de UP también la **duración**, ← →) → **turno** →
 **Reporte de Calidad** (ENTER repetir · D cambiar dificultad · ESC menú). P pausa y M
-silencia en cualquier juego. Los récords se guardan por juego y por dificultad en el
-navegador.
+silencia en cualquier juego; con el ratón o el dedo, tocar el reloj del turno también
+pausa. Las pantallas de inicio, pausa y reporte tienen botones que se pueden tocar o
+clicar. Los récords se guardan por juego y por dificultad en el navegador.
 
 Controles comunes: **WASD/flechas** moverse · **E** operar (E o Esc para salir) ·
 **Espacio** confirmar o mantener · **TAB** manual de consulta · **1-4** opciones.
@@ -75,6 +77,49 @@ operario, las ventanas de estación, los mini-juegos (por ejemplo, el patrón de
 usa L1 R1 L2 R2 / LB RB LT RT), las herramientas y el pie de controles de la barra
 lateral. En Línea en Paro, las notificaciones de presión se responden con L2 / LT
 ("arrancar ya") o R2 / RT ("seguir el protocolo").
+
+### Pantallas táctiles (móvil, tableta o TV táctil)
+
+Al tocar la pantalla, el juego pasa a modo táctil: el menú dice "Toca un juego para
+empezar" y las ayudas de cada juego muestran los botones que hay en pantalla.
+
+- **Juegos de mapa** (Pasteurizadora Flash, CIP Rush, El Cazador de Riesgos, Línea en
+  Paro): arrastra el dedo en la mitad izquierda para mover al operario. El joystick
+  aparece donde apoyas el dedo. A la derecha están los botones del juego, con su nombre
+  (A Confirmar, X Operar, Y Manual o Plan, B Salir). Los botones 1-4 de las herramientas
+  y los mini-juegos van a la izquierda. Las opciones de las ventanas (tanques,
+  herramientas, CIP…) también se pueden tocar.
+- **Control de UP:** arrastra el dedo hacia arriba o abajo en la mitad izquierda para
+  cambiar la temperatura. La llave de paso se cambia tocando LLENADORA o DESCARTE, o con
+  los botones A y B.
+- **Supervisor de Turno y Guía Rápida de Reacción:** todo se toca directamente: el rombo
+  de respuestas, las herramientas, los puntos, Continuar y "ayuda" o "guía". La ayuda se
+  cierra tocando la pantalla.
+- **En un móvil apaisado**, los botones van en las franjas negras a los lados del juego,
+  para no tapar nada. En tabletas y TV van encima del juego, semitransparentes.
+- En vertical, el juego pide girar el dispositivo y se pausa.
+- El botón ⛶ del menú pone el juego en pantalla completa. En Android, además, fija la
+  pantalla en horizontal.
+- Tocar el reloj del turno (o el ⏸ que tiene al lado) pausa el juego.
+
+### Configuración (clave)
+
+El botón ⚙ del menú (también **C** en el teclado o SHARE / VIEW en el mando) pide una
+clave: **Odiseo**. No distingue mayúsculas, porque los teclados de móvil ponen la
+primera en mayúscula. Con la clave se puede:
+
+- **Activar o desactivar juegos.** Los desactivados no aparecen en el menú. Por defecto
+  están desactivados **Pasteurizadora Flash** y **Línea en Paro**. Siempre queda al
+  menos un juego activo.
+- **Fijar una dificultad general** (Fácil, Normal o Difícil) para todos los juegos, o
+  dejar que cada jugador la elija. Con la dificultad fijada, la pantalla de inicio la
+  muestra bloqueada (🔒) y solo deja elegir las opciones propias del juego, como el modo
+  o el tiempo para responder.
+
+La configuración se guarda en el navegador de cada dispositivo, junto con los récords:
+hay que hacerla una vez en cada equipo donde se juegue. La clave sirve para evitar
+cambios casuales de los jugadores. No es una protección fuerte: el juego funciona sin
+conexión y la clave está dentro del propio archivo.
 
 ### Generar el exportable
 
@@ -338,6 +383,8 @@ dist/                   exportable de un solo archivo (generado con pnpm build)
 assets/fonts/           Rajdhani y Share Tech Mono (SIL Open Font License)
 scripts/build.mjs       genera el exportable
 src/core/pad.js         mandos PS/Xbox: detección, flancos y traducción a acciones
+src/core/touch.js       pantallas táctiles: joystick flotante, botones virtuales y toques
+src/core/settings.js    configuración con clave: juegos activos y dificultad general
 src/core/draw.js        lienzo, tema del afiche, HUD, paneles, jugador, botones del mando
 src/core/bubble.js      burbuja de pensamiento "¡Esto no va así!"
 src/core/world.js       movimiento cenital con colisiones y estaciones
@@ -348,7 +395,7 @@ src/content/reaction.js Guía Rápida de Reacción: situaciones, puntos con su t
 src/games/*.js          un archivo por juego (CIP, cazador, paro, control de UP, supervisor, reacción, adaptador pasteurizadora)
 src/config.js, sim.js, minigames.js, render.js   motor de la Pasteurizadora Flash
 src/audio.js            efectos sintetizados con WebAudio
-src/main.js             teclado, ratón, mando, bucle y pantallas
+src/main.js             teclado, ratón, toque, mando, bucle, pantallas y configuración
 test/                   pruebas con node:test
 ```
 
@@ -359,5 +406,6 @@ pnpm test
 ```
 
 Las pruebas cubren las reglas de cada juego (caminos correctos e incorrectos, burbujas,
-puntuación y game over), la fórmula de UP, la lectura de mandos PS/Xbox, el balance de la
+puntuación y game over), la fórmula de UP, la lectura de mandos PS/Xbox, el mando táctil, la configuración con
+clave, el balance de la
 pasteurizadora con un operador automático y que el exportable esté completo y al día.

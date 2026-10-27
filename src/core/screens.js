@@ -116,8 +116,25 @@
 
   // ------------------------------------------------------------ Menú
 
-  function drawMenu(ctx, t, games, sel, records) {
+  // Botones del menú: configuración (con clave) y pantalla completa (táctiles).
+  function gearButton() {
+    return { x: 1196, y: 18, w: 66, h: 66 };
+  }
+
+  function fullscreenButton() {
+    return { x: 18, y: 18, w: 66, h: 66 };
+  }
+
+  function iconButton(ctx, rc, glyph, caption, color = T.dim) {
+    D.panel(ctx, rc.x, rc.y, rc.w, rc.h, { fill: '#170e0a', edge: '#3a2418', radius: 14 });
+    D.text(ctx, glyph, rc.x + rc.w / 2, rc.y + 38, { size: 30, weight: 700, color, align: 'center' });
+    D.text(ctx, caption, rc.x + rc.w / 2, rc.y + 58, { size: 11, weight: 700, color: T.faint, align: 'center' });
+  }
+
+  function drawMenu(ctx, t, games, sel, records, { fullscreen = false } = {}) {
     backdrop(ctx, t);
+    iconButton(ctx, gearButton(), '⚙', 'ajustes');
+    if (fullscreen) iconButton(ctx, fullscreenButton(), '⛶', 'pantalla');
     glowText(ctx, 'LO QUE NO SE VE,', V.width / 2, 92, 54, T.ink, T.orange);
     glowText(ctx, 'TAMBIÉN SE LIMPIA', V.width / 2, 150, 60, T.orange, T.orangeDark);
     D.text(ctx, 'Colección de juegos de calidad · partidas cortas para aprender jugando', V.width / 2, 188, { size: 19, weight: 600, color: T.dim, align: 'center' });
@@ -173,17 +190,21 @@
       });
     });
 
-    const pad = D.InputState.device !== 'keyboard';
-    D.hints(
-      ctx,
-      [
-        [{ key: '← →', pad: 'dpadLR' }, 'elegir juego'],
-        [{ key: 'ENTER', pad: 'a' }, 'continuar'],
-      ].concat(pad ? [] : [[{ key: 'M' }, 'sonido']]),
-      V.width / 2,
-      664,
-      { size: 15, gap: 40, ink: T.dim, align: 'center' }
-    );
+    const device = D.InputState.device;
+    if (device === 'touch') D.text(ctx, '☝  Toca un juego para empezar', V.width / 2, 668, { size: 20, weight: 700, color: T.dim, align: 'center' });
+    else {
+      D.hints(
+        ctx,
+        [
+          [{ key: '← →', pad: 'dpadLR' }, 'elegir juego'],
+          [{ key: 'ENTER', pad: 'a' }, 'continuar'],
+          [{ key: 'C', pad: 'select' }, 'ajustes'],
+        ].concat(device === 'keyboard' ? [[{ key: 'M' }, 'sonido']] : []),
+        V.width / 2,
+        664,
+        { size: 15, gap: 40, ink: T.dim, align: 'center' }
+      );
+    }
     D.text(ctx, padStatus(), V.width / 2, 700, { size: 14, color: T.faint, align: 'center' });
   }
 
@@ -191,12 +212,14 @@
 
   function padStatus() {
     const type = D.InputState.padType;
+    if (D.InputState.device === 'touch') return 'Pantalla táctil · también funciona con teclado, ratón y mandos PS o Xbox';
     if (!type) return 'Teclado y ratón · conecta un mando PS o Xbox y pulsa cualquier botón para usarlo';
     return `Mando ${type === 'ps' ? 'PlayStation' : 'Xbox'} conectado · los botones en pantalla se adaptan al mando`;
   }
 
   // values: valor elegido en cada fila de opciones; focus: fila activa (-1 = dificultad).
-  function drawSetup(ctx, t, game, diffSel, records, values = [], focus = -1) {
+  // locked: dificultad fijada por la configuración (no se puede cambiar).
+  function drawSetup(ctx, t, game, diffSel, records, values = [], focus = -1, { locked = false } = {}) {
     backdrop(ctx, t, game.accent);
     D.panel(ctx, 40, 40, 670, 652, { fill: '#160d09', edge: '#3a2418', radius: 16 });
     ctx.save();
@@ -224,7 +247,7 @@
     });
 
     D.text(ctx, 'CONTROLES', 60, 560, { size: 15, weight: 800, color: T.dim });
-    D.text(ctx, D.InputState.device === 'keyboard' ? 'teclado' : D.InputState.device === 'ps' ? 'mando PlayStation' : 'mando Xbox', 190, 560, { size: 14, weight: 700, color: game.accent });
+    D.text(ctx, { keyboard: 'teclado', ps: 'mando PlayStation', xbox: 'mando Xbox', touch: 'pantalla táctil' }[D.InputState.device] || 'mando Xbox', 190, 560, { size: 14, weight: 700, color: game.accent });
     game.controls.forEach(([k, label, pad], i) => {
       const cx = 60 + (i % 2) * 320;
       const cy = 596 + Math.floor(i / 2) * 44;
@@ -232,7 +255,8 @@
       D.text(ctx, label, cx + w + 12, cy + 6, { size: 16, weight: 600, color: T.ink });
     });
 
-    D.text(ctx, 'ELIGE LA DIFICULTAD', 736, 120, { size: 20, weight: 800, color: T.ink });
+    D.text(ctx, locked ? 'DIFICULTAD FIJADA POR CONFIGURACIÓN' : 'ELIGE LA DIFICULTAD', 736, 120, { size: 20, weight: 800, color: T.ink });
+    drawButton(ctx, backButton(), { key: 'ESC', pad: 'b' }, '◀ VOLVER', { color: game.accent });
     const rec = records[game.id] || {};
     const choices = choicesOf(game);
     const rows = choices.length;
@@ -241,6 +265,8 @@
     diffCards(rows).forEach((c, i) => {
       const d = D.DIFFICULTIES[i];
       const on = i === diffSel;
+      ctx.save();
+      if (locked && !on) ctx.globalAlpha = 0.3;
       D.panel(ctx, c.x, c.y, c.w, c.h, { fill: on ? '#24150d' : '#140c09', edge: on ? d.color : '#3a2418', radius: 14, glow: on ? d.color : null });
       if (on) {
         ctx.fillStyle = d.color;
@@ -250,7 +276,7 @@
       const top = tight ? 30 : compact ? 34 : 40;
       for (let p = 0; p < 3; p++) D.pumpkin(ctx, c.x + 42 + p * 46, c.y + top, 24, p < d.pumpkins);
       D.text(ctx, d.label, c.x + 172, c.y + top + 10, { size: 32, weight: 800, color: d.color });
-      if (D.InputState.device === 'keyboard') D.keycap(ctx, String(i + 1), c.x + c.w - 30, c.y + 34, { size: 14, color: on ? d.color : '#5a4030' });
+      if (D.InputState.device === 'keyboard' && !locked) D.keycap(ctx, String(i + 1), c.x + c.w - 30, c.y + 34, { size: 14, color: on ? d.color : '#5a4030' });
       D.text(ctx, `Récord: ${bestLabel(rec[d.id])}`, c.x + c.w - 54, c.y + 41, { size: 14, weight: 700, color: T.dim, align: 'right' });
       const by = tight ? 62 : compact ? 70 : 82;
       const step = tight ? 18 : compact ? 19 : 22;
@@ -258,6 +284,8 @@
         D.text(ctx, '•', c.x + 28, c.y + by + j * step, { size: 16, weight: 800, color: d.color });
         D.text(ctx, b, c.x + 44, c.y + by + j * step, { size: tight ? 14 : compact ? 15 : 16, weight: 600, color: on ? T.ink : T.dim });
       });
+      if (locked && !on) D.text(ctx, '🔒', c.x + c.w - 30, c.y + c.h - 16, { size: 18, align: 'center' });
+      ctx.restore();
     });
     const chosen = [];
     choices.forEach((choice, r) => {
@@ -299,15 +327,146 @@
     while (size > 16 && ctx.measureText(label).width > b.w - 140) ctx.font = D.font(--size, 800);
     D.text(ctx, label, b.x + 24, b.y + 29 + size / 3, { size, weight: 800, color: '#170e0a' });
     D.control(ctx, { key: 'ENTER', pad: 'a' }, b.x + b.w - 90, b.y + b.h / 2, { size: 16, color: '#170e0a', keyInk: d.color });
+    const nav = locked ? (rows > 1 ? 'opciones' : null) : rows > 1 ? 'dificultad / opciones' : 'dificultad';
     D.hints(
       ctx,
-      [
-        [{ key: '↑ ↓', pad: 'dpadUD' }, rows > 1 ? 'dificultad / opciones' : 'dificultad'],
-        [{ key: 'ESC', pad: 'b' }, 'volver'],
-      ],
+      [...(nav ? [[{ key: '↑ ↓', pad: 'dpadUD' }, nav]] : []), [{ key: 'ESC', pad: 'b' }, 'volver']],
       b.x + b.w / 2,
       b.y - 16,
       { size: 12, ink: T.faint, align: 'center', color: '#6e5a48' }
+    );
+  }
+
+  // ------------------------------------------------------------ Botones tocables
+
+  function backButton() {
+    return { x: 1080, y: 50, w: 160, h: 42 };
+  }
+
+  // Botón con su control (tecla, botón del mando o ☝ en pantallas táctiles) y texto.
+  function drawButton(ctx, rc, spec, label, { color = T.orange, fill = '#1e130e', ink = T.ink, size = 18 } = {}) {
+    D.panel(ctx, rc.x, rc.y, rc.w, rc.h, { fill, edge: color, radius: 10 });
+    ctx.font = D.font(size, 800);
+    const cw = D.measureControl(ctx, spec, size * 0.8);
+    const tw = ctx.measureText(label).width;
+    const x0 = rc.x + (rc.w - (cw + 10 + tw)) / 2;
+    D.control(ctx, spec, x0, rc.y + rc.h / 2, { size: size * 0.8, color });
+    D.text(ctx, label, x0 + cw + 10, rc.y + rc.h / 2 + size * 0.35, { size, weight: 800, color: ink });
+  }
+
+  function row(items, y, w, h, gap = 20) {
+    const x0 = V.width / 2 - (items.length * w + (items.length - 1) * gap) / 2;
+    return items.map((it, i) => ({ ...it, x: x0 + i * (w + gap), y, w, h }));
+  }
+
+  function pauseButtons() {
+    return row(
+      [
+        { action: 'start', spec: { key: 'P', pad: 'start' }, label: 'Continuar' },
+        { action: 'alt', spec: { key: 'R', pad: 'y' }, label: 'Reiniciar' },
+        { action: 'back', spec: { key: 'ESC', pad: 'b' }, label: 'Menú de juegos' },
+      ],
+      376,
+      260,
+      58
+    );
+  }
+
+  // alt: texto del botón para volver a la pantalla de inicio (null si no hay nada que elegir).
+  function reportButtons(alt = 'Cambiar dificultad') {
+    return row(
+      [
+        { action: 'confirm', spec: { key: 'ENTER', pad: 'a' }, label: 'Otra vez' },
+        ...(alt ? [{ action: 'alt', spec: { key: 'D', pad: 'y' }, label: alt }] : []),
+        { action: 'back', spec: { key: 'ESC', pad: 'b' }, label: 'Menú de juegos' },
+      ],
+      660,
+      280,
+      48
+    );
+  }
+
+  // ------------------------------------------------------------ Configuración
+
+  const DIFF_OPTIONS = [{ value: null, label: 'Cada jugador elige', color: T.ink }].concat(D.DIFFICULTIES.map((d) => ({ value: d.id, label: d.label, color: d.color })));
+
+  // Elementos de la pantalla de configuración, en orden de navegación.
+  function configItems(games) {
+    const items = games.map((g, i) => ({ kind: 'game', id: g.id, x: 60, y: 168 + i * 64, w: 600, h: 56 }));
+    DIFF_OPTIONS.forEach((o, i) => items.push({ kind: 'diff', value: o.value, x: 720, y: 168 + i * 64, w: 500, h: 56 }));
+    items.push({ kind: 'done', x: 720, y: 600, w: 500, h: 60 });
+    return items;
+  }
+
+  function drawConfig(ctx, t, games, cfg, focus) {
+    backdrop(ctx, t);
+    glowText(ctx, '⚙ CONFIGURACIÓN', V.width / 2, 76, 44, T.ink, T.orange);
+    D.text(ctx, 'Se guarda en este dispositivo', V.width / 2, 112, { size: 17, weight: 600, color: T.dim, align: 'center' });
+    D.text(ctx, 'JUEGOS ACTIVOS', 60, 152, { size: 16, weight: 800, color: T.dim });
+    D.text(ctx, 'DIFICULTAD GENERAL', 720, 152, { size: 16, weight: 800, color: T.dim });
+    const items = configItems(games);
+    const active = games.filter((g) => !cfg.disabled.includes(g.id)).length;
+    items.forEach((it, i) => {
+      const on = i === focus;
+      if (it.kind === 'game') {
+        const g = games.find((x) => x.id === it.id);
+        const enabled = !cfg.disabled.includes(it.id);
+        D.panel(ctx, it.x, it.y, it.w, it.h, { fill: on ? '#24150d' : '#170e0a', edge: on ? g.accent : '#3a2418', radius: 12, glow: on ? g.accent : null });
+        D.text(ctx, `${games.indexOf(g) + 1}. ${g.title}`, it.x + 18, it.y + 26, { size: 20, weight: 800, color: enabled ? T.ink : T.faint });
+        D.text(ctx, g.subtitle, it.x + 18, it.y + 46, { size: 13, weight: 700, color: enabled ? g.accent : T.faint });
+        // Interruptor.
+        const sx = it.x + it.w - 104;
+        const sy = it.y + 14;
+        ctx.fillStyle = enabled ? T.ok : '#3a2e26';
+        D.roundRect(ctx, sx, sy, 86, 28, 14);
+        ctx.fill();
+        ctx.fillStyle = '#f4efe6';
+        ctx.beginPath();
+        ctx.arc(enabled ? sx + 72 : sx + 14, sy + 14, 11, 0, Math.PI * 2);
+        ctx.fill();
+        D.text(ctx, enabled ? 'SÍ' : 'NO', enabled ? sx + 28 : sx + 58, sy + 20, { size: 14, weight: 800, color: enabled ? '#0e1a0c' : T.dim, align: 'center' });
+      } else if (it.kind === 'diff') {
+        const o = DIFF_OPTIONS.find((x) => x.value === it.value);
+        const chosen = cfg.difficulty === it.value;
+        D.panel(ctx, it.x, it.y, it.w, it.h, { fill: chosen ? '#24150d' : '#170e0a', edge: on ? T.orange : chosen ? o.color : '#3a2418', radius: 12, glow: on ? T.orange : null });
+        ctx.strokeStyle = o.color;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(it.x + 30, it.y + it.h / 2, 11, 0, Math.PI * 2);
+        ctx.stroke();
+        if (chosen) {
+          ctx.fillStyle = o.color;
+          ctx.beginPath();
+          ctx.arc(it.x + 30, it.y + it.h / 2, 6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        D.text(ctx, it.value ? `Fijar en ${o.label}` : o.label, it.x + 54, it.y + 35, { size: 20, weight: 800, color: o.color });
+      } else {
+        D.panel(ctx, it.x, it.y, it.w, it.h, { fill: T.orange, edge: T.orange, radius: 12, glow: on ? T.orange : null });
+        D.text(ctx, '✔  LISTO, VOLVER AL MENÚ', it.x + it.w / 2, it.y + 39, { size: 22, weight: 800, color: '#170e0a', align: 'center' });
+      }
+    });
+    D.paragraph(
+      ctx,
+      cfg.difficulty
+        ? 'La dificultad queda fijada para todos los juegos: en la pantalla de inicio no se puede cambiar.'
+        : 'Cada jugador elige la dificultad en la pantalla de inicio de cada juego.',
+      720,
+      450,
+      500,
+      { size: 15, color: T.dim }
+    );
+    D.paragraph(ctx, `${active} de ${games.length} juegos activos. Siempre queda al menos uno.`, 720, 510, 500, { size: 15, color: T.dim });
+    D.hints(
+      ctx,
+      [
+        [{ key: '↑ ↓ ← →', pad: 'dpad' }, 'moverse'],
+        [{ key: 'ENTER', pad: 'a' }, 'cambiar'],
+        [{ key: 'ESC', pad: 'b' }, 'volver'],
+      ],
+      V.width / 2,
+      700,
+      { size: 14, gap: 36, ink: T.dim, align: 'center' }
     );
   }
 
@@ -317,22 +476,12 @@
     ctx.fillStyle = 'rgba(8,4,3,0.78)';
     ctx.fillRect(0, 0, V.width, V.height);
     glowText(ctx, 'PAUSA', V.width / 2, 320, 72, T.ink, T.orange);
-    D.hints(
-      ctx,
-      [
-        [{ key: 'P', pad: 'start' }, 'continuar'],
-        [{ key: 'R', pad: 'y' }, 'reiniciar'],
-        [{ key: 'ESC', pad: 'b' }, 'menú de juegos'],
-      ],
-      V.width / 2,
-      390,
-      { size: 18, gap: 44, align: 'center' }
-    );
+    for (const b of pauseButtons()) drawButton(ctx, b, b.spec, b.label);
   }
 
   // ------------------------------------------------------------ Reporte
 
-  function drawReport(ctx, t, game, diffId, rep, record, isRecord) {
+  function drawReport(ctx, t, game, diffId, rep, record, isRecord, { alt = 'Cambiar dificultad' } = {}) {
     backdrop(ctx, t, game.accent);
     const x = 90;
     const y = 30;
@@ -406,18 +555,8 @@
       if (rep.mistakes.length > 3) D.text(ctx, `y ${rep.mistakes.length - 3} más…`, tx + 16, ly + 2, { size: 14, color: '#7a5030' });
     }
 
-    D.hints(
-      ctx,
-      [
-        [{ key: 'ENTER', pad: 'a' }, 'otra vez'],
-        [{ key: 'D', pad: 'y' }, 'cambiar dificultad'],
-        [{ key: 'ESC', pad: 'b' }, 'menú de juegos'],
-      ],
-      V.width / 2,
-      684,
-      { size: 16, gap: 44, align: 'center', color: game.accent }
-    );
+    for (const b of reportButtons(alt)) drawButton(ctx, b, b.spec, b.label, { color: game.accent, size: 17 });
   }
 
-  PF.Screens = { menuCards, diffCards, choicesOf, choiceOf, choiceChips, playButton, drawMenu, drawSetup, drawPause, drawReport };
+  PF.Screens = { configItems, drawConfig, gearButton, fullscreenButton, menuCards, diffCards, choicesOf, choiceOf, choiceChips, playButton, backButton, pauseButtons, reportButtons, drawButton, drawMenu, drawSetup, drawPause, drawReport };
 })();

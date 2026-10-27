@@ -36,6 +36,9 @@ test('el exportable es un único HTML sin recursos externos', () => {
     'PF.Reaction = {',
     'PF.KPI = {',
     'PF.Pad = {',
+    'PF.Touch = {',
+    'PF.Settings = {',
+    'id="game"',
     'requestAnimationFrame(frame)',
   ]) {
     assert.ok(html.includes(name), `falta ${name}`);

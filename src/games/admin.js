@@ -315,10 +315,16 @@
     const pp = pad.pressed;
     const hit = (keys, btns) => keys.some((k) => P.includes(k)) || btns.some((b) => pp.includes(b));
 
-    if (hit(['help'], ['select'])) s.help = !s.help;
+    const clicks = input.clicks || [];
+    const tapped = (rc) => clicks.some((c) => inside(c, rc));
+    // La ayuda congela el turno; se cierra con el mismo botón, B o tocando la pantalla.
     if (s.help) {
-      if (hit(['cancel'], ['b'])) s.help = false;
-      return; // la ayuda congela el turno
+      if (hit(['help', 'cancel'], ['select', 'b']) || clicks.length) s.help = false;
+      return;
+    }
+    if (hit(['help'], ['select']) || tapped(HELP_TAP)) {
+      s.help = true;
+      return;
     }
 
     const sh = s.shift;
@@ -353,11 +359,11 @@
       D.sfx('alarm');
     }
 
-    if (hit(['tab', 'view'], ['rb']) && !s.cfg.lineAlways && sh.phase === 'run') {
+    if ((hit(['tab', 'view'], ['rb']) || tapped(toolRect(1))) && !s.cfg.lineAlways && sh.phase === 'run') {
       s.view = s.view === 'line' ? 'reports' : 'line';
       D.sfx('blip');
     }
-    if (hit(['joker'], ['lb'])) useJoker(s);
+    if (hit(['joker'], ['lb']) || tapped(toolRect(0))) useJoker(s);
 
     // Teclado: flechas o 1-4. Mando: △ □ ○ ✕ (Y X B A) o la cruceta.
     let ans = null;
@@ -370,6 +376,13 @@
       if (slot) ans = slot[0];
     }
     if (ans) answer(s, ans);
+  }
+
+  // Zonas tocables (pantallas táctiles y ratón): "ayuda" del HUD y las herramientas.
+  const HELP_TAP = { x: 1170, y: 34, w: 110, h: 30 };
+  function toolRect(i) {
+    const rc = PANEL.dec;
+    return { x: rc.x + 8, y: rc.y + 440 + i * 30, w: rc.w - 16, h: 30 };
   }
 
   function inside(p, rc) {
@@ -1202,6 +1215,8 @@
       '¿Qué KPI cae?: al final del turno clasifica cada pérdida del reporte por el KPI que la detecta primero.',
       'Ver la línea muestra la causa real; Llamar y verificar corrige reportes dudosos (usos limitados).',
     ],
+    // Táctil: se toca directamente el rombo, las herramientas y la ayuda.
+    touch: { stick: false, main: [], aux: [] },
     controls: [
       ['↑ ← → ↓', 'responder (rombo)', ['y', 'x', 'b', 'a']],
       ['C', 'llamar y verificar', 'lb'],

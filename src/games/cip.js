@@ -974,6 +974,7 @@
       'Llenadora: frota válvulas y tazón hasta quitar toda la suciedad.',
       'Verificación: hisopo + luminómetro. Menos de 50 URL = lote aprobado.',
     ],
+    touch: { stick: true, main: [{ pad: 'a', label: 'Confirmar' }, { pad: 'x', label: 'Operar' }, { pad: 'y', label: 'Manual' }, { pad: 'b', label: 'Salir' }] },
     controls: [
       ['WASD', 'moverse', 'lstick'],
       ['E', 'operar', 'x'],

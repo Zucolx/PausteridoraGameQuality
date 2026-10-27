@@ -701,6 +701,7 @@
       'Acércate, pulsa E y elige la herramienta correcta para limpiarlo.',
       'Cada limpieza muestra una ficha "Sabías que" del manual.',
     ],
+    touch: { stick: true, main: [{ pad: 'a', label: 'Aplicar' }, { pad: 'x', label: 'Limpiar' }, { pad: 'b', label: 'Salir' }], aux: [{ pad: 'lb', label: '' }, { pad: 'rb', label: '' }, { pad: 'lt', label: '' }, { pad: 'rt', label: '' }] },
     controls: [
       ['WASD', 'moverse', 'lstick'],
       ['E', 'limpiar / revisar', 'x'],

@@ -609,6 +609,7 @@
       'Cuando el protocolo esté completo, arranca la línea en START.',
       'Ignora las notificaciones que te meten prisa: arrancar sin protocolo = cerveza contaminada.',
     ],
+    touch: { stick: true, main: [{ pad: 'a', label: 'Mantener' }, { pad: 'x', label: 'Operar' }, { pad: 'y', label: 'Plan' }, { pad: 'b', label: 'Salir' }] },
     controls: [
       ['WASD', 'moverse', 'lstick'],
       ['E', 'operar', 'x'],

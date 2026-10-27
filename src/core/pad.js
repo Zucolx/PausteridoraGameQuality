@@ -80,7 +80,7 @@
   }
 
   // Acciones de menú: navegar, aceptar, volver, alternativa (Y/△) y pausa.
-  const TO_MENU = { up: 'up', lsUp: 'up', down: 'down', lsDown: 'down', left: 'left', lsLeft: 'left', right: 'right', lsRight: 'right', a: 'confirm', b: 'back', y: 'alt', start: 'start' };
+  const TO_MENU = { up: 'up', lsUp: 'up', down: 'down', lsDown: 'down', left: 'left', lsLeft: 'left', right: 'right', lsRight: 'right', a: 'confirm', b: 'back', y: 'alt', start: 'start', select: 'config' };
 
   function toMenu(pressed) {
     return pressed.map((p) => TO_MENU[p]).filter(Boolean);

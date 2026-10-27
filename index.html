@@ -2,7 +2,9 @@
 <html lang="es">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Lo que no se ve, también se limpia</title>
     <meta name="description" content="Colección de juegos de calidad para envasado de cerveza: pasteurizadora, CIP, cazador de riesgos, paros de línea, control de UP, supervisor de turno y guía rápida de reacción." />
     <style>
@@ -37,12 +39,92 @@
       canvas {
         display: block;
         outline: none;
+        /* Pantallas táctiles: sin zoom, desplazamiento ni menú al mantener el dedo. */
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      /* Ventana de la clave de configuración. */
+      #login {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(10, 6, 5, 0.86);
+        font-family: 'Rajdhani', sans-serif;
+        color: #f4efe6;
+      }
+      #login[hidden] {
+        display: none;
+      }
+      #login form {
+        width: min(440px, 90vw);
+        padding: 24px 28px;
+        background: #170e0a;
+        border: 2px solid #ff8a1f;
+        border-radius: 16px;
+        box-shadow: 0 0 40px rgba(255, 138, 31, 0.25);
+      }
+      #login h2 {
+        margin: 0 0 6px;
+        font-size: 30px;
+      }
+      #login p {
+        margin: 0 0 14px;
+        font-size: 17px;
+        color: #b8a48c;
+      }
+      #login input {
+        box-sizing: border-box;
+        width: 100%;
+        padding: 12px 14px;
+        font: 600 22px 'Rajdhani', sans-serif;
+        color: #f4efe6;
+        background: #0a0605;
+        border: 2px solid #5a4030;
+        border-radius: 10px;
+        outline: none;
+      }
+      #login input:focus {
+        border-color: #ff8a1f;
+      }
+      #login .err {
+        min-height: 22px;
+        margin: 8px 0 6px;
+        color: #ff6b5a;
+        font-weight: 700;
+      }
+      #login .row {
+        display: flex;
+        gap: 12px;
+        justify-content: flex-end;
+      }
+      #login button {
+        min-width: 120px;
+        padding: 12px 18px;
+        font: 800 20px 'Rajdhani', sans-serif;
+        border-radius: 10px;
+        border: 2px solid #ff8a1f;
+        cursor: pointer;
+      }
+      #login .cancel {
+        color: #f4efe6;
+        background: transparent;
+      }
+      #login .ok {
+        color: #170e0a;
+        background: #ff8a1f;
       }
     </style>
   </head>
   <body>
     <canvas id="game" tabindex="0" aria-label="Lo que no se ve, también se limpia"></canvas>
     <script src="src/core/pad.js"></script>
+    <script src="src/core/touch.js"></script>
+    <script src="src/core/settings.js"></script>
     <script src="src/core/draw.js"></script>
     <script src="src/config.js"></script>
     <script src="src/minigames.js"></script>

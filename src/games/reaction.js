@@ -168,9 +168,16 @@
     const pp = (input.pad && input.pad.pressed) || [];
     const hit = (keys, btns) => keys.some((k) => P.includes(k)) || btns.some((b) => pp.includes(b));
 
-    if (hit(['help'], ['select'])) toggleGuide(s);
-    else if (s.help && hit(['cancel'], ['b'])) s.help = false;
-    if (s.help) return; // la guía congela el tiempo
+    // La guía congela el tiempo; se cierra con el mismo botón, B o tocando la pantalla.
+    const clicks = input.clicks || [];
+    if (s.help) {
+      if (hit(['help', 'cancel'], ['select', 'b']) || clicks.length) s.help = false;
+      return;
+    }
+    if (hit(['help'], ['select']) || clicks.some((c) => inside(c, GUIDE_TAP))) {
+      toggleGuide(s);
+      return;
+    }
 
     B.update(s.bubble, dt);
     s.floats = D.floatsUpdate(s.floats, dt);
@@ -220,6 +227,9 @@
       s.stats.points -= s.cfg.guideCost;
     }
   }
+
+  // "guía" en el HUD: también se abre tocándola.
+  const GUIDE_TAP = { x: 1170, y: 34, w: 110, h: 30 };
 
   function inside(p, rc) {
     return p.x >= rc.x && p.x <= rc.x + rc.w && p.y >= rc.y && p.y <= rc.y + rc.h;
@@ -876,6 +886,8 @@
       'Si eliges un paso que no va, te explicamos por qué. Al completar cada ruta la ves entera, con lo que se hace en cada paso.',
       'La guía completa está a mano: consultarla pausa el tiempo, pero en Normal y Difícil resta puntos.',
     ],
+    // Táctil: se tocan los puntos directamente.
+    touch: { stick: false, main: [], aux: [] },
     controls: [
       ['↑ ↓ ← →', 'elegir punto', 'dpad'],
       ['ENTER', 'conectar (o clic)', 'a'],

@@ -1,6 +1,8 @@
 // Carga los módulos de la colección (scripts clásicos que cuelgan de globalThis.PF) en Node.
 // Solo la lógica: las funciones de dibujo no se llaman en las pruebas.
 require('../src/core/pad.js');
+require('../src/core/touch.js');
+require('../src/core/settings.js');
 require('../src/core/draw.js');
 require('../src/config.js');
 require('../src/minigames.js');

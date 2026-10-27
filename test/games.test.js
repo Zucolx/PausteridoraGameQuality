@@ -658,3 +658,34 @@ test('Reacción: si se acaba el tiempo, el juego termina y las rutas pendientes 
   assert.ok(rep.score > 0 && rep.score < 40);
   assert.equal(rep.rows.filter((r) => r[1] === 'sin terminar').length, 3);
 });
+
+test('Táctil: Control de UP, Supervisor y Reacción responden a toques en su propia interfaz', () => {
+  const tap = (s, x, y) => s.update(DT, input({ clicks: [{ x, y }] }));
+  // Control de UP: la llave se cambia tocando sus botones; "ayuda" se abre y se cierra tocando.
+  const pu = game('pu').create('normal', { seed: 1 });
+  tap(pu, 1000, 528);
+  assert.equal(pu.valve, 'drain');
+  tap(pu, 1000, 472);
+  assert.equal(pu.valve, 'fill');
+  tap(pu, 1240, 50);
+  assert.equal(pu.help, true);
+  tap(pu, 640, 360);
+  assert.equal(pu.help, false);
+  // Supervisor: herramientas y ayuda tocables.
+  const ad = game('admin').create('dificil', { seed: 5, mode: 'diag' });
+  tick(ad, 6.2);
+  tap(ad, 1060, 530);
+  assert.equal(ad.stats.jokersUsed, 1, 'tocar "Llamar y verificar"');
+  tap(ad, 1240, 50);
+  assert.equal(ad.help, true);
+  tap(ad, 640, 360);
+  assert.equal(ad.help, false);
+  assert.equal(ad.stats.diagOk + ad.stats.max, 0, 'cerrar la ayuda tocando no responde el rombo');
+  // Reacción: "guía" del HUD.
+  const rx = game('reaction').create('normal', { seed: 3 });
+  tap(rx, 1240, 50);
+  assert.equal(rx.help, true);
+  assert.equal(rx.stats.guide, 1);
+  tap(rx, 640, 360);
+  assert.equal(rx.help, false);
+});

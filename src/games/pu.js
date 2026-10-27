@@ -165,10 +165,16 @@
     const pad = input.pad || { held: {}, pressed: [], ly: 0 };
     const P = input.pressed;
     const pp = pad.pressed;
-    if (P.includes('help') || P.includes('tab') || pp.includes('y')) s.help = !s.help;
+    const clicks = input.clicks || [];
+    const tapped = (rc) => clicks.some((c) => c.x >= rc.x && c.x <= rc.x + rc.w && c.y >= rc.y && c.y <= rc.y + rc.h);
+    // La ayuda congela el turno; se abre también tocando "ayuda" y se cierra tocando la pantalla.
     if (s.help) {
-      if (P.includes('cancel') || pp.includes('b')) s.help = false;
-      return; // la ayuda congela el turno
+      if (P.includes('help') || P.includes('tab') || P.includes('cancel') || pp.includes('y') || pp.includes('b') || clicks.length) s.help = false;
+      return;
+    }
+    if (P.includes('help') || P.includes('tab') || pp.includes('y') || tapped(HELP_TAP)) {
+      s.help = true;
+      return;
     }
 
     s.time += dt;
@@ -185,9 +191,9 @@
     }
 
     // Llave de paso.
-    if (P.includes('1') || pp.includes('a')) setValve(s, 'fill');
-    if (P.includes('2') || pp.includes('b')) setValve(s, 'drain');
-    if (P.includes('space') || pp.includes('rb') || pp.includes('lb')) setValve(s, s.valve === 'fill' ? 'drain' : 'fill');
+    if (P.includes('1') || pp.includes('a') || tapped(valveRect('fill'))) setValve(s, 'fill');
+    if (P.includes('2') || pp.includes('b') || tapped(valveRect('drain'))) setValve(s, 'drain');
+    if (P.includes('space') || pp.includes('rb') || pp.includes('lb') || tapped(toggleRect())) setValve(s, s.valve === 'fill' ? 'drain' : 'fill');
 
     // Consigna de temperatura: toque = 0,1 °C; mantener = rápido; stick = proporcional.
     const dpad = (pad.held.up ? 1 : 0) - (pad.held.down ? 1 : 0);
@@ -212,6 +218,19 @@
 
     updateLotes(s, dt);
     tips(s, dt);
+  }
+
+  // Zonas tocables: "ayuda" del HUD y las dos posiciones de la llave.
+  const HELP_TAP = { x: 1170, y: 34, w: 110, h: 30 };
+  // "alternar" bajo la llave también se puede tocar.
+  function toggleRect() {
+    const rc = PANELS.valve;
+    return { x: rc.x + 10, y: rc.y + 158, w: 170, h: 28 };
+  }
+
+  function valveRect(v) {
+    const rc = PANELS.valve;
+    return { x: rc.x + 14, y: rc.y + (v === 'fill' ? 48 : 104), w: 236, h: 48 };
   }
 
   function setValve(s, v) {
@@ -680,7 +699,8 @@
     const cy = rc.y + rc.h - 30;
     const w = D.control(ctx, CTRL.temp, rc.x + 18, cy, { size: 15, color: ACCENT });
     D.text(ctx, 'subir / bajar', rc.x + 26 + w, cy + 2, { size: 15, weight: 700 });
-    D.text(ctx, 'toque = 0,1 °C · mantener = rápido', rc.x + 26 + w, cy + 18, { size: 12, color: T.dim });
+    const how = D.InputState.device === 'touch' ? 'arrastra el dedo ↑ ↓ en la mitad izquierda' : 'toque = 0,1 °C · mantener = rápido';
+    D.text(ctx, how, rc.x + 26 + w, cy + 18, { size: 12, color: T.dim });
   }
 
   function drawPuPanel(s, ctx) {
@@ -952,6 +972,8 @@
       'Menos de 24: subpasteurizada, turbia con bolitas verde pálido. Más de 30: quemada.',
       'Con la llave de paso decides si cada lote va a la LLENADORA o al DESCARTE.',
     ],
+    // Táctil: arrastrar a la izquierda sube o baja la temperatura; la llave también se toca en su panel.
+    touch: { stick: true, stickHint: false, main: [{ pad: 'a', label: 'Llenadora' }, { pad: 'b', label: 'Descarte' }, { pad: 'y', label: 'Ayuda' }] },
     controls: [
       ['W / S', 'temperatura', ['dpadUD', 'lstickV']],
       ['1', 'llave → llenadora', 'a'],

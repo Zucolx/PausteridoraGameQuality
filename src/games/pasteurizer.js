@@ -160,6 +160,7 @@
       'Corre a la estación marcada, pulsa E y corrige con A/D o con el mini-juego.',
       'No cierres la válvula del todo: 2 s al mínimo y se para la línea.',
     ],
+    touch: { stick: true, main: [{ pad: 'a', label: 'Reparar' }, { pad: 'x', label: 'Operar' }, { pad: 'b', label: 'Salir' }], aux: [{ pad: 'lb', label: '' }, { pad: 'rb', label: '' }, { pad: 'lt', label: '' }, { pad: 'rt', label: '' }] },
     controls: [
       ['WASD', 'moverse', 'lstick'],
       ['E', 'operar', 'x'],

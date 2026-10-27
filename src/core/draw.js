@@ -154,9 +154,24 @@
     xbox: { a: '#5cc85c', b: '#e8473b', x: '#3d8fe0', y: '#f2c230' },
   };
 
+  // En pantallas táctiles, los glifos muestran los botones virtuales del juego en curso
+  // (InputState.touchLabels); lo que no tiene botón se toca directamente en pantalla (☝).
+  function touchTap(type, name) {
+    if (type !== 'touch') return false;
+    const dir = name.startsWith('dpad') || name.includes('stick') || ['up', 'down', 'left', 'right'].includes(name);
+    if (dir) return !InputState.touchStick;
+    return !((InputState.touchLabels || {})[name]);
+  }
+
+  function glyphLabel(type, name) {
+    if (type === 'touch') return touchTap(type, name) ? '☝' : InputState.touchLabels[name];
+    return PF.Pad ? PF.Pad.label(type, name) : name.toUpperCase();
+  }
+
   // Dibuja un botón del mando centrado en (x, y). Devuelve el ancho.
   function padGlyph(ctx, type, name, x, y, size = 16) {
     const r = size * 0.95;
+    if (touchTap(type, name)) return capsule(ctx, '☝', x, y, size);
     if (['a', 'b', 'x', 'y'].includes(name)) {
       const color = FACE[type === 'ps' ? 'ps' : 'xbox'][name];
       ctx.save();
@@ -251,7 +266,10 @@
       return r * 2;
     }
     // Gatillos, hombros y botones de menú: etiqueta en cápsula.
-    const label = PF.Pad ? PF.Pad.label(type, name) : name.toUpperCase();
+    return capsule(ctx, glyphLabel(type, name), x, y, size);
+  }
+
+  function capsule(ctx, label, x, y, size) {
     ctx.font = font(size * 0.8, 800);
     const w = Math.max(size * 1.9, ctx.measureText(label).width + size * 0.9);
     const h = size * 1.5;
@@ -293,9 +311,10 @@
   }
 
   function measureGlyph(ctx, type, name, size) {
-    if (['a', 'b', 'x', 'y'].includes(name) || name.includes('stick')) return size * 1.9;
-    if (name.startsWith('dpad') || ['up', 'down', 'left', 'right'].includes(name)) return size * 1.9;
-    const label = PF.Pad ? PF.Pad.label(type, name) : name.toUpperCase();
+    const tap = touchTap(type, name);
+    if (!tap && (['a', 'b', 'x', 'y'].includes(name) || name.includes('stick'))) return size * 1.9;
+    if (!tap && (name.startsWith('dpad') || ['up', 'down', 'left', 'right'].includes(name))) return size * 1.9;
+    const label = glyphLabel(type, name);
     ctx.font = font(size * 0.8, 800);
     return Math.max(size * 1.9, ctx.measureText(label).width + size * 0.9);
   }
@@ -552,12 +571,13 @@
   // Cambia nombres de teclas en un texto por los botones del mando activo.
   function keysText(str, device = InputState.device) {
     if (device === 'keyboard' || !PF.Pad) return str;
-    const L = (n) => PF.Pad.label(device, n);
+    const L = (n) => glyphLabel(device, n);
+    const cross = device === 'touch' ? 'el joystick' : 'la cruceta';
     return str
       .replace(/ESPACIO/g, L('a'))
-      .replace(/\bA\/D\b/g, 'la cruceta ◀▶')
+      .replace(/\bA\/D\b/g, `${cross} ◀▶`)
       .replace(/1-4/g, `${L('lb')} ${L('rb')} ${L('lt')} ${L('rt')}`)
-      .replace(/\b[Ff]lechas\b/g, 'la cruceta');
+      .replace(/\b[Ff]lechas\b/g, cross);
   }
 
   // Zona lateral reservada para mensajes (de `top` hasta encima del pie de controles).
@@ -778,6 +798,7 @@
     padGlyph,
     control,
     hints,
+    measureControl,
     InputState,
     pumpkin,
     player,
