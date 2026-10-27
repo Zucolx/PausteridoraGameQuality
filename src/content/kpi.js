@@ -52,6 +52,30 @@
     },
   };
 
+  // KPIs que afecta cada tipo de pérdida (modo "¿Qué KPIs caen?"): mismo numerador, así que
+  // una pérdida baja todos los KPIs cuyo denominador la incluye.
+  const AFFECTS = {
+    int: ['LEF', 'GLY', 'OSE'],
+    pe: ['GLY', 'OSE'],
+    ns: ['OSE'],
+    all: ['LEF', 'GLY', 'OSE'],
+  };
+  const AFFECTS_WHY = {
+    int: 'Es interna: baja el EPT dentro del tiempo de operación, así que caen los tres. El LEF la detecta primero y arrastra al GLY y al OSE.',
+    pe: 'Es planificada o externa: el LEF la saca de su denominador y no cambia; caen el GLY y el OSE.',
+    ns: 'Es tiempo no programado: no entra en el denominador del LEF ni del GLY; solo cae el OSE.',
+    all: 'Es un error de dato: la velocidad nominal entra en el EPT, el numerador de los tres, así que los distorsiona a todos.',
+    distort: 'Solo se distorsiona el LEF, que sube artificialmente: el GLY y el OSE siguen contando esa hora como perdida.',
+  };
+
+  function affects(def) {
+    return def.distort ? ['LEF'] : AFFECTS[def.cat];
+  }
+
+  function affectsWhy(def) {
+    return AFFECTS_WHY[def.distort ? 'distort' : def.cat];
+  }
+
   const KPIS = {
     LEF: { name: 'LEF', full: 'Line Efficiency', formula: 'EPT / LET', question: 'Mientras la línea operaba, ¿qué parte fue producción efectiva?', cat: 'int' },
     GLY: { name: 'GLY', full: 'Productividad global', formula: 'EPT / tiempo programado', question: 'Del tiempo que se programó, ¿qué parte fue producción efectiva?', cat: 'pe' },
@@ -172,5 +196,5 @@
     return x == null ? '—' : (x * 100).toFixed(1).replace('.', ',') + ' %';
   }
 
-  PF.KPI = { HOURS, CATS, KPIS, OWNERS, LOSSES, TRAPS, DIAG, DIAG_WHY, EXAMPLES, kpis, gaps, diagnose, pct };
+  PF.KPI = { HOURS, CATS, AFFECTS, affects, affectsWhy, KPIS, OWNERS, LOSSES, TRAPS, DIAG, DIAG_WHY, EXAMPLES, kpis, gaps, diagnose, pct };
 })();

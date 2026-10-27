@@ -336,7 +336,7 @@ test('Supervisor: el catálogo es el de la investigación (24 ítems) y cada pé
   assert.equal(kpiOf('ausentismo-lento'), 'LEF');
   assert.equal(kpiOf('ausentismo-para'), 'GLY');
   assert.equal(kpiOf('ausentismo-noprog'), 'OSE');
-  assert.equal(kpiOf('velocidad-nominal'), 'TODOS');
+  assert.equal(kpiOf('velocidad-nominal'), 'TODOS'); // error de dato: los tres
   assert.equal(kpiOf('mal-registro'), 'LEF');
   for (const l of KPI.LOSSES) assert.ok(l.explain && KPI.OWNERS[l.owner], l.id);
 });
@@ -399,20 +399,70 @@ test('Supervisor (diagnóstico): rombo como la cara del mando y explicación del
   assert.deepEqual(Object.fromEntries(Object.entries(PF.Admin.SLOTS).map(([k, v]) => [k, v.pad])), { LEF: 'y', GLY: 'x', OSE: 'b', OK: 'a' });
 });
 
-test('Supervisor (¿qué KPI cae?): clasifica por el primer KPI que la detecta, incluso "los tres"', () => {
+test('Supervisor: cada pérdida baja todos los KPIs cuyo denominador la incluye', () => {
+  const aff = (id) => KPI.affects(KPI.LOSSES.find((l) => l.id === id));
+  assert.deepEqual(aff('falla-llenadora'), ['LEF', 'GLY', 'OSE'], 'interna: caen los tres');
+  assert.deepEqual(aff('cip'), ['GLY', 'OSE'], 'planificada: el LEF la excluye');
+  assert.deepEqual(aff('materiales'), ['GLY', 'OSE'], 'externa');
+  assert.deepEqual(aff('demanda'), ['OSE'], 'no programada: solo el OSE');
+  assert.deepEqual(aff('ausentismo-lento'), ['LEF', 'GLY', 'OSE']);
+  assert.deepEqual(aff('ausentismo-para'), ['GLY', 'OSE']);
+  assert.deepEqual(aff('velocidad-nominal'), ['LEF', 'GLY', 'OSE'], 'error de dato en el EPT');
+  assert.deepEqual(aff('mal-registro'), ['LEF'], 'solo se distorsiona el LEF');
+  // Coherente con el cálculo: los KPIs que bajan con una pérdida de 2 h son justo esos.
+  for (const cat of ['int', 'pe', 'ns']) {
+    const k = KPI.kpis([loss(cat, 2)]);
+    const fell = ['LEF', 'GLY', 'OSE'].filter((n) => k[n.toLowerCase()] < 1);
+    assert.deepEqual(fell, KPI.AFFECTS[cat], cat);
+  }
+});
+
+test('Supervisor (¿qué KPIs caen?): se marcan varios KPIs por pérdida y luego se confirma', () => {
   const s = game('admin').create('dificil', { seed: 8, mode: 'kpi' });
   tick(s, 6.2);
   assert.equal(s.shift.phase, 'report');
   assert.ok(s.shift.losses.some((l) => l.def.mixed), 'difícil incluye ítems que caen en más de un KPI');
-  const key = { LEF: 'up', GLY: 'left', OSE: 'right', TODOS: 'down' };
-  for (const l of s.shift.losses) press(s, key[KPI.CATS[l.def.cat].kpi]);
+  // Teclado: ↑ LEF · ← GLY · → OSE marcan y desmarcan; ↓ o ENTER confirma.
+  const key = { LEF: 'up', GLY: 'left', OSE: 'right' };
+  press(s, 'down');
+  assert.equal(s.shift.cursor, 0, 'sin marcar nada no se confirma');
+  assert.equal(s.bubble.cur.kind, 'tip');
+  press(s, 'up');
+  press(s, 'up');
+  assert.equal(s.shift.sel.LEF, false, 'marcar dos veces desmarca');
+  for (const l of s.shift.losses) {
+    for (const k of KPI.affects(l.def)) press(s, key[k]);
+    press(s, 'confirm');
+  }
   assert.equal(s.shift.phase, 'done');
   const n = s.shift.losses.length;
   assert.equal(s.stats.points, 50 * n);
+  assert.equal(s.stats.exact, n);
   const rep = s.report();
-  assert.match(rep.headline, /clasificaste bien/);
+  assert.match(rep.headline, /todos los KPIs en \d+ de \d+ pérdidas/);
   assert.equal(rep.score, 100);
-  // Con el mando, ✕/A responde "los tres" y explica el error de dato.
+});
+
+test('Supervisor (¿qué KPIs caen?): marcar de más o de menos da puntos parciales y lo explica', () => {
+  let s = null;
+  for (let seed = 1; seed < 200 && !s; seed++) {
+    const g = game('admin').create('normal', { seed, mode: 'kpi' });
+    if (g.shift.losses[0].def.cat === 'pe' && !g.shift.losses[0].def.mixed) s = g;
+  }
+  tick(s, 6.2);
+  // Mando: △ LEF · □ GLY · ○ OSE · ✕ confirmar. Una planificada/externa: GLY y OSE.
+  const pad = (b) => s.update(DT, input({ pad: { pressed: [b] } }));
+  pad('y');
+  pad('x');
+  pad('a');
+  assert.deepEqual(s.shift.answers[0], ['LEF', 'GLY']);
+  assert.equal(s.stats.points, 15, 'solo el GLY quedó bien decidido');
+  assert.equal(s.bubble.cur.kind, 'error');
+  assert.match(s.bubble.cur.message, /Afecta a GLY y OSE: marcaste LEF de más y te faltó OSE/);
+  assert.match(s.bubble.cur.message, /el LEF la saca de su denominador/);
+  assert.deepEqual([s.stats.kpis.LEF.ok, s.stats.kpis.GLY.ok, s.stats.kpis.OSE.ok], [0, 1, 0]);
+  assert.deepEqual(Object.keys(s.stats.confusions).sort(), ['LEF de más · planificada', 'faltó OSE · planificada']);
+  // Error de dato: velocidad nominal → los tres (toque en el rombo).
   let found = null;
   for (let seed = 1; seed < 300 && !found; seed++) {
     const g = game('admin').create('dificil', { seed, mode: 'kpi' });
@@ -420,13 +470,16 @@ test('Supervisor (¿qué KPI cae?): clasifica por el primer KPI que la detecta, 
   }
   assert.ok(found, 'aparece el ítem de velocidad nominal mal configurada');
   tick(found, 6.2);
+  const tap = (slot) => {
+    const rc = { LEF: [1062, 200], GLY: [962, 274], OSE: [1162, 274], OK: [1062, 348] }[slot];
+    found.update(DT, input({ clicks: [{ x: rc[0], y: rc[1] }] }));
+  };
   for (const l of found.shift.losses) {
-    if (l.def.id === 'velocidad-nominal') {
-      found.update(DT, input({ pad: { pressed: ['a'] } }));
-      assert.match(found.bubble.cur.message, /tres KPIs/);
-    } else press(found, key[KPI.CATS[l.def.cat].kpi]);
+    for (const k of KPI.affects(l.def)) tap(k);
+    tap('OK');
+    if (l.def.id === 'velocidad-nominal') assert.match(found.bubble.cur.message, /Afecta a LEF, GLY y OSE\. Es un error de dato/);
   }
-  assert.equal(found.stats.items.TODOS.ok, 1);
+  assert.equal(found.stats.exact, found.shift.losses.length);
 });
 
 test('Supervisor: los reportes pueden mentir, el comodín los verifica y los KPI usan la causa real', () => {

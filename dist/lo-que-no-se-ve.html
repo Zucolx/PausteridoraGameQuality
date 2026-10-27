@@ -8370,6 +8370,30 @@
     },
   };
 
+  // KPIs que afecta cada tipo de pérdida (modo "¿Qué KPIs caen?"): mismo numerador, así que
+  // una pérdida baja todos los KPIs cuyo denominador la incluye.
+  const AFFECTS = {
+    int: ['LEF', 'GLY', 'OSE'],
+    pe: ['GLY', 'OSE'],
+    ns: ['OSE'],
+    all: ['LEF', 'GLY', 'OSE'],
+  };
+  const AFFECTS_WHY = {
+    int: 'Es interna: baja el EPT dentro del tiempo de operación, así que caen los tres. El LEF la detecta primero y arrastra al GLY y al OSE.',
+    pe: 'Es planificada o externa: el LEF la saca de su denominador y no cambia; caen el GLY y el OSE.',
+    ns: 'Es tiempo no programado: no entra en el denominador del LEF ni del GLY; solo cae el OSE.',
+    all: 'Es un error de dato: la velocidad nominal entra en el EPT, el numerador de los tres, así que los distorsiona a todos.',
+    distort: 'Solo se distorsiona el LEF, que sube artificialmente: el GLY y el OSE siguen contando esa hora como perdida.',
+  };
+
+  function affects(def) {
+    return def.distort ? ['LEF'] : AFFECTS[def.cat];
+  }
+
+  function affectsWhy(def) {
+    return AFFECTS_WHY[def.distort ? 'distort' : def.cat];
+  }
+
   const KPIS = {
     LEF: { name: 'LEF', full: 'Line Efficiency', formula: 'EPT / LET', question: 'Mientras la línea operaba, ¿qué parte fue producción efectiva?', cat: 'int' },
     GLY: { name: 'GLY', full: 'Productividad global', formula: 'EPT / tiempo programado', question: 'Del tiempo que se programó, ¿qué parte fue producción efectiva?', cat: 'pe' },
@@ -8490,7 +8514,7 @@
     return x == null ? '—' : (x * 100).toFixed(1).replace('.', ',') + ' %';
   }
 
-  PF.KPI = { HOURS, CATS, KPIS, OWNERS, LOSSES, TRAPS, DIAG, DIAG_WHY, EXAMPLES, kpis, gaps, diagnose, pct };
+  PF.KPI = { HOURS, CATS, AFFECTS, affects, affectsWhy, KPIS, OWNERS, LOSSES, TRAPS, DIAG, DIAG_WHY, EXAMPLES, kpis, gaps, diagnose, pct };
 })();
 </script>
     <script>
@@ -8500,8 +8524,9 @@
 // solo avanza solo si se acaba ese tiempo. Dos modos:
 //  · Diagnóstico de turno: lee el tablero y decide qué KPI detecta la gran caída
 //    (LEF, GLY, OSE o ninguno si el turno fue excelente) y con quién atacarla.
-//  · ¿Qué KPI cae?: en el reporte de fin de turno, clasifica cada pérdida por el
-//    primer KPI que la detecta (LEF, GLY u OSE; o los tres si es un error de dato).
+//  · ¿Qué KPIs caen?: en el reporte de fin de turno, marca TODOS los KPIs que afecta
+//    cada pérdida (interna → LEF, GLY y OSE · planificada/externa → GLY y OSE ·
+//    no programada → solo OSE), porque una misma pérdida baja varios KPIs.
 // Los KPI se calculan siempre con las causas reales: los reportes pueden estar sin
 // verificar o equivocados, pero los números no mienten.
 (function () {
@@ -8517,7 +8542,10 @@
   const SIM_S = 6; // 12 h simuladas en 6 s
   const ANSWER_TIMES = [30, 40, 50];
   const REVEAL_S = 6; // tras agotar el tiempo, la solución se ve unos segundos y el juego sigue
-  const MODES = { diag: 'Diagnóstico de turno', kpi: '¿Qué KPI cae?' };
+  const MODES = { diag: 'Diagnóstico de turno', kpi: '¿Qué KPIs caen?' };
+  const KPI_KEYS = ['LEF', 'GLY', 'OSE'];
+  // Puntos por pérdida clasificada: 15 por cada KPI bien decidido (marcado o no) + 5 si están los tres.
+  const ITEM_POINTS = { perKpi: 15, exact: 5 };
 
   const DIFF = {
     facil: { decoy: 0, unverified: 0, wrong: 0, jokers: 3, tags: true, gapHints: true, lineAlways: true, colorTimeline: true, labels: true, itemsB: 3, traps: 0 },
@@ -8555,7 +8583,7 @@
   // Pérdidas que pueden ocupar horas en el turno (23 y 24 son errores de dato).
   const TIMED = K.LOSSES.filter((d) => !d.noHours);
   // El diagnóstico usa los ítems de un solo KPI (1-18); los que "pueden caer en más de
-  // uno" quedan como trampas del modo "¿Qué KPI cae?".
+  // uno" quedan como trampas del modo "¿Qué KPIs caen?".
   const DIAG_POOL = TIMED.filter((d) => !d.mixed);
 
   // ------------------------------------------------------------- Estado
@@ -8592,7 +8620,10 @@
         unanswered: 0,
         timeouts: 0,
         jokersUsed: 0,
-        items: { LEF: { ok: 0, total: 0 }, GLY: { ok: 0, total: 0 }, OSE: { ok: 0, total: 0 }, TODOS: { ok: 0, total: 0 } },
+        // ¿Qué KPIs caen?: pérdidas con los tres KPIs bien decididos y decisiones por KPI.
+        exact: 0,
+        classified: 0,
+        kpis: { LEF: { ok: 0, total: 0 }, GLY: { ok: 0, total: 0 }, OSE: { ok: 0, total: 0 } },
         confusions: {},
       },
     };
@@ -8744,7 +8775,11 @@
       rng,
       defs.map((def) => ({ def, hours: def.noHours ? 0 : round1(0.3 + rng() * 1.2) }))
     );
-    return { type: null, losses, reports: makeReports(s, losses), answers: losses.map(() => null), cursor: 0 };
+    return { type: null, losses, reports: makeReports(s, losses), answers: losses.map(() => null), cursor: 0, sel: emptySel() };
+  }
+
+  function emptySel() {
+    return { LEF: false, GLY: false, OSE: false };
   }
 
   function nextShift(s) {
@@ -8782,7 +8817,7 @@
   }
 
   // Se muestran las causas reales (brechas y horas por tipo): en diagnóstico tras responder;
-  // en "¿Qué KPI cae?" solo al terminar, para no regalar las respuestas.
+  // en "¿Qué KPIs caen?" solo al terminar, para no regalar las respuestas.
   function revealed(s) {
     const sh = s.shift;
     if (!sh) return false;
@@ -8796,10 +8831,6 @@
 
   function activeLoss(sh) {
     return sh.losses.find((l) => !l.def.noHours && sh.clock >= l.start && sh.clock < l.start + l.hours) || null;
-  }
-
-  function kpiOfCat(cat) {
-    return K.CATS[cat].kpi;
   }
 
   // ------------------------------------------------------------- Actualización
@@ -8861,17 +8892,20 @@
     }
     if (hit(['joker'], ['lb']) || tapped(toolRect(0))) useJoker(s);
 
-    // Teclado: flechas o 1-4. Mando: △ □ ○ ✕ (Y X B A) o la cruceta.
-    let ans = null;
-    if (hit(['up', '1'], ['y', 'up'])) ans = 'LEF';
-    else if (hit(['left', '2'], ['x', 'left'])) ans = 'GLY';
-    else if (hit(['right', '3'], ['b', 'right'])) ans = 'OSE';
-    else if (hit(['down', '4'], ['a', 'down'])) ans = 'OK';
+    // Teclado: flechas o 1-4. Mando: △ □ ○ ✕ (Y X B A) o la cruceta. Se procesan en orden
+    // (en "¿Qué KPIs caen?" se pueden marcar varios y confirmar en el mismo instante).
+    const KEY_SLOT = { up: 'LEF', 1: 'LEF', left: 'GLY', 2: 'GLY', right: 'OSE', 3: 'OSE', down: 'OK', 4: 'OK' };
+    const PAD_SLOT = { y: 'LEF', up: 'LEF', x: 'GLY', left: 'GLY', b: 'OSE', right: 'OSE', a: 'OK', down: 'OK' };
+    if (s.mode === 'kpi') KEY_SLOT.confirm = 'OK';
+    const slots = [...P.map((k) => KEY_SLOT[k]), ...pp.map((b) => PAD_SLOT[b])].filter(Boolean);
     for (const c of input.clicks || []) {
       const slot = Object.entries(diamond()).find(([, rc]) => inside(c, rc));
-      if (slot) ans = slot[0];
+      if (slot) slots.push(slot[0]);
     }
-    if (ans) answer(s, ans);
+    for (const slot of s.mode === 'kpi' ? slots : slots.slice(0, 1)) {
+      if (s.shift !== sh || s.over) break;
+      answer(s, slot);
+    }
   }
 
   // Zonas tocables (pantallas táctiles y ratón): "ayuda" del HUD y las herramientas.
@@ -8914,7 +8948,12 @@
       if (sh.phase === 'run') diagAnswer(s, SLOT_CAT[slot]);
       else if (sh.phase === 'action' && slot !== 'OK') actionAnswer(s, sh.options[POS_INDEX[SLOTS[slot].pos]]);
     } else if (sh.phase === 'report') {
-      itemAnswer(s, slot === 'OK' ? 'TODOS' : slot);
+      if (slot === 'OK') confirmItem(s);
+      else {
+        // Varias opciones: △ □ ○ (o ↑ ← →) marcan y desmarcan; ✕ / ↓ / ENTER confirma.
+        sh.sel[slot] = !sh.sel[slot];
+        D.sfx('blip');
+      }
     }
   }
 
@@ -8969,26 +9008,58 @@
     return o === 'none' ? 'nadie: estandarizar y mantener' : K.OWNERS[o];
   }
 
-  function itemAnswer(s, kpi) {
+  // "LEF, GLY y OSE" · "GLY y OSE" · "solo el OSE".
+  function kpiList(list) {
+    if (list.length === 1) return `solo el ${list[0]}`;
+    return `${list.slice(0, -1).join(', ')} y ${list[list.length - 1]}`;
+  }
+
+  function confirmItem(s) {
     const sh = s.shift;
+    const chosen = KPI_KEYS.filter((k) => sh.sel[k]);
+    if (!chosen.length) {
+      B.say(s.bubble, 'Marca al menos un KPI: toda pérdida afecta como mínimo a uno. Luego confirma.', { kind: 'tip', life: 3 });
+      return;
+    }
     const i = sh.cursor;
     const l = sh.losses[i];
-    const truth = kpiOfCat(l.def.cat);
-    sh.answers[i] = kpi;
-    s.stats.max += 50;
-    s.stats.items[truth].total++;
-    const why = l.def.explain || K.CATS[l.def.cat].explain;
-    const said = truth === 'TODOS' ? 'los tres a la vez' : truth;
-    if (kpi === truth) {
-      s.stats.items[truth].ok++;
-      s.stats.points += 50;
-      D.floatAdd(s.floats, 1062, 290, '+50', T.ok, 22);
-      B.say(s.bubble, `${l.def.distort ? 'Distorsiona el LEF.' : `La detecta ${said}.`} ${why}`, { kind: 'ok', life: 4 });
-      D.sfx('blip');
+    const truth = K.affects(l.def);
+    sh.answers[i] = chosen;
+    sh.sel = emptySel();
+    s.stats.max += ITEM_POINTS.perKpi * 3 + ITEM_POINTS.exact;
+    s.stats.classified++;
+    const extra = chosen.filter((k) => !truth.includes(k));
+    const missing = truth.filter((k) => !chosen.includes(k));
+    for (const k of KPI_KEYS) {
+      s.stats.kpis[k].total++;
+      if (chosen.includes(k) === truth.includes(k)) s.stats.kpis[k].ok++;
+    }
+    const exact = !extra.length && !missing.length;
+    const pts = ITEM_POINTS.perKpi * (3 - extra.length - missing.length) + (exact ? ITEM_POINTS.exact : 0);
+    s.stats.points += pts;
+    if (pts) D.floatAdd(s.floats, 1062, 290, `+${pts}`, exact ? T.ok : T.warn, 22);
+    // En los ítems "que pueden caer en más de un KPI" se explica primero el caso concreto.
+    const why = l.def.mixed && !l.def.noHours ? `${l.def.explain} ${K.affectsWhy(l.def)}` : K.affectsWhy(l.def);
+    const verb = l.def.distort ? 'Distorsiona a' : 'Afecta a';
+    if (exact) {
+      s.stats.exact++;
+      B.say(s.bubble, `${verb} ${kpiList(truth)}. ${why}`, { kind: 'ok', life: 6 });
+      D.sfx('resolved');
     } else {
-      const key = `${truth} → dijiste ${kpi}`;
-      s.stats.confusions[key] = (s.stats.confusions[key] || 0) + 1;
-      B.say(s.bubble, `No es ${kpi === 'TODOS' ? 'de los tres' : kpi}: ${l.def.distort ? 'el que se distorsiona es el LEF' : `la detecta primero ${said}`}. ${why}`);
+      // Clave corta para el reporte: "LEF de más · planificada", "faltó OSE · interna".
+      const cat = l.def.distort ? 'registro' : { int: 'interna', pe: 'planificada', ns: 'no programada', all: 'dato' }[l.def.cat];
+      for (const k of extra) {
+        const key = `${k} de más · ${cat}`;
+        s.stats.confusions[key] = (s.stats.confusions[key] || 0) + 1;
+      }
+      for (const k of missing) {
+        const key = `faltó ${k} · ${cat}`;
+        s.stats.confusions[key] = (s.stats.confusions[key] || 0) + 1;
+      }
+      const parts = [];
+      if (extra.length) parts.push(`marcaste ${extra.join(' y ')} de más`);
+      if (missing.length) parts.push(`te faltó ${missing.join(' y ')}`);
+      B.say(s.bubble, `${verb} ${kpiList(truth)}: ${parts.join(' y ')}. ${why}`, { life: 9 });
     }
     sh.cursor++;
     if (sh.cursor >= sh.losses.length) finish(s);
@@ -9010,8 +9081,8 @@
       }
     } else {
       for (let i = sh.cursor; i < sh.losses.length; i++) {
-        s.stats.max += 50;
-        s.stats.items[kpiOfCat(sh.losses[i].def.cat)].total++;
+        s.stats.max += ITEM_POINTS.perKpi * 3 + ITEM_POINTS.exact;
+        for (const k of KPI_KEYS) s.stats.kpis[k].total++;
       }
       if (sh.cursor < sh.losses.length) {
         s.stats.unanswered += sh.losses.length - sh.cursor;
@@ -9394,13 +9465,13 @@
     const rc = PANEL.center;
     const sh = s.shift;
     panelTitle(ctx, rc, 'REPORTE DE FIN DE TURNO', 'lo que falló');
-    D.text(ctx, '¿Qué KPI la detecta primero?', rc.x + 16, rc.y + 58, { size: 16, weight: 800, color: ACCENT });
+    D.text(ctx, '¿Qué KPIs afecta? Marca todos los que caen', rc.x + 16, rc.y + 58, { size: 16, weight: 800, color: ACCENT });
     sh.losses.forEach((l, i) => {
       const rep = sh.reports[i];
       const y = rc.y + 74 + i * 84;
       const cur = sh.phase === 'report' && i === sh.cursor;
       const ans = sh.answers[i];
-      const truth = kpiOfCat(l.def.cat);
+      const truth = K.affects(l.def);
       D.panel(ctx, rc.x + 10, y, rc.w - 20, 76, { fill: cur ? '#16262c' : '#1a1412', edge: cur ? ACCENT : '#2e2420', radius: 8, glow: cur ? ACCENT : null });
       if (cur) D.text(ctx, '▶', rc.x + 22, y + 30, { size: 16, weight: 800, color: ACCENT });
       ctx.font = D.font(15, 700);
@@ -9409,22 +9480,33 @@
       D.text(ctx, l.def.noHours ? 'dato' : fmtH(l.hours), rc.x + 40, y + 66, { size: 12, color: T.dim, family: D.MONO });
       const badge = reportBadge(s, rep);
       if (badge) D.text(ctx, badge[0], rc.x + 100, y + 66, { size: 11, weight: 700, color: badge[1] });
-      // Respuesta.
-      const ax = rc.x + rc.w - 70;
-      if (ans) {
-        const ok = ans === truth;
-        D.panel(ctx, ax - 10, y + 12, 66, 52, { fill: ok ? T.okDark : '#4a1410', edge: ok ? T.ok : T.red, radius: 8 });
-        D.text(ctx, `${ok ? '✔' : '✖'} ${ans === 'TODOS' ? '3' : ans}`, ax + 23, y + 34, { size: 15, weight: 800, color: ok ? T.ok : T.red, align: 'center' });
-        if (!ok) D.text(ctx, `era ${truth === 'TODOS' ? 'los 3' : truth}`, ax + 23, y + 54, { size: 12, weight: 700, color: T.ink, align: 'center' });
-      } else if (sh.phase === 'done') {
-        // Sin responder (se agotó el tiempo): se muestra la solución.
-        D.panel(ctx, ax - 10, y + 12, 66, 52, { fill: '#2a2018', edge: T.warn, radius: 8 });
-        D.text(ctx, '⏱', ax + 23, y + 34, { size: 15, weight: 800, color: T.warn, align: 'center' });
-        D.text(ctx, `era ${truth === 'TODOS' ? 'los 3' : truth}`, ax + 23, y + 54, { size: 12, weight: 700, color: T.ink, align: 'center' });
-      } else {
-        D.text(ctx, cur ? '?' : '·', ax + 23, y + 46, { size: 26, weight: 800, color: cur ? ACCENT : T.faint, align: 'center' });
-      }
+      // Respuesta: una casilla por KPI (verde = bien marcado, rojo = de más, naranja = faltó).
+      drawKpiMarks(ctx, rc.x + rc.w - 92, y + 14, { truth, ans, cur, sel: sh.sel, done: sh.phase === 'done' });
     });
+  }
+
+  function drawKpiMarks(ctx, x, y, { truth, ans, cur, sel, done }) {
+    KPI_KEYS.forEach((k, j) => {
+      const bx = x + j * 26;
+      const inTruth = truth.includes(k);
+      let fill = '#1e1814';
+      let edge = '#3a2e26';
+      let ink = T.faint;
+      if (ans) {
+        const marked = ans.includes(k);
+        if (marked && inTruth) [fill, edge, ink] = [T.okDark, T.ok, T.ok];
+        else if (marked) [fill, edge, ink] = ['#4a1410', T.red, T.red];
+        else if (inTruth) [fill, edge, ink] = ['#2a2018', T.warn, T.warn];
+      } else if (done) {
+        if (inTruth) [fill, edge, ink] = ['#2a2018', T.warn, T.warn];
+      } else if (cur && sel[k]) [fill, edge, ink] = ['#16323a', ACCENT, ACCENT];
+      else if (cur) [edge, ink] = ['#2e5560', T.dim];
+      D.panel(ctx, bx, y, 22, 46, { fill, edge, radius: 6 });
+      D.text(ctx, k[0], bx + 11, y + 20, { size: 15, weight: 800, color: ink, align: 'center' });
+      const mark = ans ? (ans.includes(k) ? (inTruth ? '✔' : '✖') : inTruth ? '!' : '') : cur && sel[k] ? '✔' : done && inTruth ? '!' : '';
+      if (mark) D.text(ctx, mark, bx + 11, y + 39, { size: 12, weight: 800, color: ink, align: 'center' });
+    });
+    if (ans && ans.length === truth.length && ans.every((k) => truth.includes(k))) D.text(ctx, 'bien', x + 37, y + 60, { size: 11, weight: 800, color: T.ok, align: 'center' });
   }
 
   // Rectángulos del rombo de respuestas (también para el ratón).
@@ -9445,11 +9527,14 @@
   function slotLabels(s) {
     const sh = s.shift;
     if (s.mode === 'kpi') {
+      // Casillas: se marcan varias y luego se confirma.
+      const box = (k) => `${sh.sel[k] ? '☑' : '☐'} ${k}`;
+      const n = KPI_KEYS.filter((k) => sh.sel[k]).length;
       return {
-        LEF: ['LEF', 'interna de la línea', K.CATS.int.color],
-        GLY: ['GLY', 'planificada o externa', K.CATS.pe.color],
-        OSE: ['OSE', 'no programada', K.CATS.ns.color],
-        OK: ['LOS TRES', 'error de dato', K.CATS.all.color],
+        LEF: [box('LEF'), sh.sel.LEF ? 'marcado: cae' : 'márcalo si cae', K.CATS.int.color],
+        GLY: [box('GLY'), sh.sel.GLY ? 'marcado: cae' : 'márcalo si cae', K.CATS.pe.color],
+        OSE: [box('OSE'), sh.sel.OSE ? 'marcado: cae' : 'márcalo si cae', K.CATS.ns.color],
+        OK: ['CONFIRMAR', n ? `${n} KPI${n > 1 ? 's' : ''} marcado${n > 1 ? 's' : ''}` : 'marca al menos uno', T.ok],
       };
     }
     if (sh.phase === 'run' || (sh.phase === 'done' && !sh.diag)) {
@@ -9488,12 +9573,12 @@
   function drawDecision(s, ctx, r) {
     const rc = PANEL.dec;
     const sh = s.shift;
-    let title = s.mode === 'kpi' ? '¿QUÉ KPI LA DETECTA?' : sh.phase === 'run' ? '¿QUÉ KPI DETECTA LA CAÍDA?' : '¿CON QUIÉN LA ATACAS?';
+    let title = s.mode === 'kpi' ? '¿QUÉ KPIs AFECTA?' : sh.phase === 'run' ? '¿QUÉ KPI DETECTA LA CAÍDA?' : '¿CON QUIÉN LA ATACAS?';
     if (sh.phase === 'done') title = 'RESULTADO DEL TURNO';
     panelTitle(ctx, rc, title);
     let help = '';
     if (s.mode === 'diag') help = sh.phase === 'run' ? 'Elige el KPI que detecta primero la gran caída, o NINGUNO si el turno fue excelente.' : sh.phase === 'action' ? 'Elige con quién atacar la pérdida principal.' : '';
-    else help = sh.phase === 'run' ? 'Observa la línea: el reporte llega al final del turno.' : sh.phase === 'report' ? 'Clasifica la pérdida marcada: ¿qué KPI la detecta primero?' : '';
+    else help = sh.phase === 'run' ? 'Observa la línea: el reporte llega al final del turno.' : sh.phase === 'report' ? 'Una pérdida puede bajar varios KPIs: marca todos los que caen y confirma.' : '';
     if (help) D.paragraph(ctx, help, rc.x + 16, rc.y + 56, rc.w - 32, { size: 13, color: T.dim });
 
     const labels = slotLabels(s);
@@ -9501,7 +9586,16 @@
     for (const [slot, rcB] of Object.entries(diamond())) {
       const lab = labels[slot];
       if (!lab) continue;
-      D.panel(ctx, rcB.x, rcB.y, rcB.w, rcB.h, { fill: '#1a1412', edge: active ? lab[2] : '#2e2420', radius: 10, glow: active ? lab[2] : null });
+      const marked = s.mode === 'kpi' && active && sh.sel[slot];
+      D.panel(ctx, rcB.x, rcB.y, rcB.w, rcB.h, { fill: marked ? '#2a2a1a' : '#1a1412', edge: active ? lab[2] : '#2e2420', radius: 10, glow: active ? lab[2] : null });
+      if (marked) {
+        ctx.save();
+        ctx.globalAlpha = 0.22;
+        ctx.fillStyle = lab[2];
+        D.roundRect(ctx, rcB.x, rcB.y, rcB.w, rcB.h, 10);
+        ctx.fill();
+        ctx.restore();
+      }
       ctx.globalAlpha = active ? 1 : 0.45;
       const cw = D.control(ctx, SLOTS[slot], rcB.x + 10, rcB.y + rcB.h / 2, { size: 13, color: lab[2] });
       ctx.font = D.font(16, 800);
@@ -9511,6 +9605,21 @@
       D.text(ctx, main, rcB.x + cw + 18, rcB.y + 29, { size: 16, weight: 800, color: lab[2] });
       D.text(ctx, lab[1], rcB.x + cw + 18, rcB.y + 48, { size: 11, weight: 600, color: T.dim });
       ctx.globalAlpha = 1;
+    }
+
+    // Fácil: la regla para marcar, bajo el rombo.
+    if (s.mode === 'kpi' && sh.phase === 'report' && s.cfg.gapHints) {
+      const y = rc.y + 330;
+      D.text(ctx, 'REGLA: mismo numerador (EPT)', rc.x + 16, y, { size: 12, weight: 800, color: T.dim });
+      [
+        ['Interna', 'LEF + GLY + OSE', K.CATS.int.color],
+        ['Planificada / externa', 'GLY + OSE', K.CATS.pe.color],
+        ['No programada', 'solo OSE', K.CATS.ns.color],
+        ['Error de dato', 'según el dato', K.CATS.all.color],
+      ].forEach(([a, b, c], i) => {
+        D.text(ctx, a, rc.x + 16, y + 20 + i * 19, { size: 13, weight: 700, color: c });
+        D.text(ctx, b, rc.x + rc.w - 16, y + 20 + i * 19, { size: 13, weight: 800, color: T.ink, align: 'right' });
+      });
     }
 
     // Resultado del turno (modo diagnóstico).
@@ -9627,12 +9736,10 @@
     const score = st.max ? Math.max(0, Math.min(100, Math.round((100 * st.points) / st.max))) : 0;
     const rank = D.rankFor(score);
     const conf = Object.entries(st.confusions).sort((a, b) => b[1] - a[1])[0];
-    const kpiRows = ['LEF', 'GLY', 'OSE', 'TODOS']
-      .filter((k) => k !== 'TODOS' || st.items.TODOS.total > 0)
-      .map((kpi) => {
-        const label = kpi === 'TODOS' ? 'Aciertos "los tres" (error de dato)' : `Aciertos ${kpi} (${K.CATS[K.KPIS[kpi].cat].short.toLowerCase()})`;
-        return [label, `${st.items[kpi].ok} de ${st.items[kpi].total}`, st.items[kpi].ok === st.items[kpi].total ? T.ok : T.warn];
-      });
+    const kpiRows = [
+      ['Pérdidas con todos los KPIs bien', `${st.exact} de ${st.classified + st.unanswered}`, st.exact === st.classified + st.unanswered ? T.ok : T.warn],
+      ...KPI_KEYS.map((k) => [`Decisiones sobre el ${k} (¿cae o no?)`, `${st.kpis[k].ok} de ${st.kpis[k].total}`, st.kpis[k].ok === st.kpis[k].total ? T.ok : T.warn]),
+    ];
     const rows =
       s.mode === 'diag'
         ? [
@@ -9650,13 +9757,10 @@
             ['Confusión más frecuente', conf ? `${conf[0]} (×${conf[1]})` : 'ninguna', conf ? T.red : T.ok],
             ['Puntuación de Calidad', `${score}/100`, D.rankColor(rank)],
           ];
-    const keys = Object.keys(st.items);
-    const total = keys.reduce((a, k) => a + st.items[k].ok, 0);
-    const n = keys.reduce((a, k) => a + st.items[k].total, 0);
     return {
       score,
       rank,
-      headline: s.mode === 'diag' ? `Modo ${MODES.diag}: diagnosticaste bien ${st.diagOk} de ${SHIFTS} turnos` : `Modo ${MODES.kpi}: clasificaste bien ${total} de ${n} pérdidas`,
+      headline: s.mode === 'diag' ? `Modo ${MODES.diag}: diagnosticaste bien ${st.diagOk} de ${SHIFTS} turnos` : `Modo ${MODES.kpi}: marcaste bien todos los KPIs en ${st.exact} de ${st.classified + st.unanswered} pérdidas`,
       rows,
       mistakes: s.bubble.log.slice(),
     };
@@ -9697,7 +9801,7 @@
         title: 'MODO DE JUEGO',
         values: [
           { value: 'diag', label: 'Diagnóstico' },
-          { value: 'kpi', label: '¿Qué KPI cae?' },
+          { value: 'kpi', label: '¿Qué KPIs caen?' },
         ],
         index: 0,
       },
@@ -9708,7 +9812,7 @@
     howTo: [
       '6 turnos de 12 h simulados en 6 s; luego tienes 30, 40 o 50 s para responder (tú eliges). Tras cada turno, lee la explicación y pulsa Continuar.',
       'Diagnóstico: ¿qué KPI detecta la gran caída: LEF, GLY, OSE… o ninguno (turno excelente)? Luego, ¿con quién la atacas?',
-      '¿Qué KPI cae?: al final del turno clasifica cada pérdida del reporte por el KPI que la detecta primero.',
+      '¿Qué KPIs caen?: al final del turno marca, en cada pérdida del reporte, todos los KPIs que afecta (puede ser más de uno).',
       'Ver la línea muestra la causa real; Llamar y verificar corrige reportes dudosos (usos limitados).',
     ],
     // Táctil: se toca directamente el rombo, las herramientas y la ayuda.

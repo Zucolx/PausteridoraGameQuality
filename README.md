@@ -27,7 +27,7 @@ Para que no estorben, los mensajes van **a un lado**:
 | 3 | **El Cazador de Riesgos** · Recorrido UV | Línea a oscuras: encontrar 5 focos de contaminación con linterna UV y limpiarlos con la herramienta correcta. |
 | 4 | **Línea en Paro** · Decisiones Bajo Presión | Aplicar el plan de reacción según cuánto lleva parada la línea, sin ceder a la presión de arrancar ya. |
 | 5 | **Control de UP** · Unidades de Pasteurización | Panel de control sin muñeco: mantener cada lote entre 24 y 30 UP (ideal 26) con la temperatura y decidir con la llave de paso si va a la llenadora o al descarte. Duración ajustable de 40 a 60 s. |
-| 6 | **Supervisor de Turno** · LEF · GLY · OSE | Administración del turno: leer el tablero de LEF, GLY y OSE para descubrir dónde se pierden las horas (modo *Diagnóstico*) o clasificar cada pérdida del reporte por el KPI que la detecta primero (modo *¿Qué KPI cae?*). 6 turnos de 12 h simulados en 6 s, con 30, 40 o 50 s para responder cada uno. |
+| 6 | **Supervisor de Turno** · LEF · GLY · OSE | Administración del turno: leer el tablero de LEF, GLY y OSE para descubrir dónde se pierden las horas (modo *Diagnóstico*) o marcar, en cada pérdida del reporte, todos los KPIs que afecta (modo *¿Qué KPIs caen?*: se pueden marcar varios). 6 turnos de 12 h simulados en 6 s, con 30, 40 o 50 s para responder cada uno. |
 | 7 | **Guía Rápida de Reacción** · Une los puntos | Unir los puntos en orden para armar la ruta de reacción de cada emergencia: derrame de sustancia química, contacto con sustancia química, conato de incendio y emergencia, hasta su procedimiento ACADIA. |
 
 ## Cómo jugar
@@ -281,11 +281,11 @@ primero.
 - **OSE:** demanda menor a la capacidad, turnos no programados, portafolio cargado
   en otra línea, restricciones aguas arriba, overhauls, feriados.
 - **Los que pueden caer en más de un KPI (19-22)** se separan en variantes con una
-  sola respuesta. Ejemplo: ausentismo, según si la línea corre más lenta (LEF), se
-  detiene (GLY) o el turno no se programa (OSE).
-- **Velocidad nominal mal configurada (23):** se responde **"los tres"**.
+  sola respuesta. Ejemplo: ausentismo, según si la línea corre más lenta (interna), se
+  detiene (externa) o el turno no se programa (no programada).
+- **Velocidad nominal mal configurada (23):** afecta a **los tres** KPIs.
 - **Falla interna registrada como externa (24):** pregunta qué KPI queda
-  distorsionado: el LEF, que sube artificialmente.
+  distorsionado: solo el LEF, que sube artificialmente.
 
 **Modo Diagnóstico de turno.** El tablero muestra LEF, GLY y OSE en vivo, acumulados
 hasta la hora actual. La pregunta es **¿qué KPI detecta la gran caída?** Se responde en
@@ -309,11 +309,26 @@ Después viene la segunda pregunta, **"¿con quién la atacas?"**:
 
 Diagnóstico +100, acción +50.
 
-**Modo ¿Qué KPI cae?** El turno corre 6 s con la línea a la vista. Al final
-llega el **reporte de fin de turno** y cada pérdida se clasifica por el primer KPI que
-la detecta, con el mismo rombo: ▲ LEF, ◀ GLY, ▶ OSE y ▼ "los tres" (error de dato).
-Cada acierto suma +50. En Normal y Difícil aparecen los ítems que pueden caer en más
-de un KPI; Difícil incluye también los errores de dato.
+**Modo ¿Qué KPIs caen?** El turno corre 6 s con la línea a la vista. Al final llega el
+**reporte de fin de turno**. En cada pérdida se marcan **todos** los KPIs que afecta,
+porque una misma pérdida baja varios: el EPT es el numerador de los tres, así que cae
+cada KPI cuyo denominador incluye ese tiempo.
+
+| Tipo de pérdida | KPIs que caen |
+|---|---|
+| Interna de la línea | LEF, GLY y OSE (el LEF la detecta primero) |
+| Planificada o externa | GLY y OSE (el LEF la excluye) |
+| No programada | solo OSE |
+| Velocidad nominal mal configurada | los tres (error de dato) |
+| Falla interna registrada como externa | solo el LEF, que se distorsiona |
+
+Con el rombo, ▲ LEF, ◀ GLY y ▶ OSE (o △ □ ○, Y X B, o tocándolos) **marcan y
+desmarcan**, y ▼ / ✕ / A / ENTER **confirma**. Cada pérdida vale 50 puntos: 15 por cada
+KPI bien decidido (marcado si cae, sin marcar si no) y 5 más si están los tres. Si
+marcas de más o de menos, la burbuja dice cuál sobró o faltó y por qué. En el reporte,
+cada KPI se ve como una casilla: verde, bien marcado; rojo, de más; naranja, faltó. En
+Fácil, la regla aparece bajo el rombo. En Normal y Difícil aparecen los ítems que pueden
+caer en más de un KPI; Difícil incluye también los errores de dato.
 
 **Herramientas y dificultad.** Los KPI se calculan siempre con las causas reales: los
 reportes pueden mentir, los números no.
@@ -329,8 +344,9 @@ reportes pueden mentir, los números no.
 
 La ayuda (H / SHARE / VIEW) pausa el turno y explica el árbol de tiempos (total →
 programado → LET → EPT), la regla rápida, cuatro turnos de ejemplo y qué está en el
-poder de cada uno. El reporte final muestra los aciertos por KPI y la confusión más
-frecuente.
+poder de cada uno. El reporte final muestra, en ¿Qué KPIs caen?, cuántas pérdidas tuvieron
+todos los KPIs bien y las decisiones correctas sobre cada KPI, además de la confusión
+más frecuente (por ejemplo "LEF de más · planificada").
 
 ### 7 · Guía Rápida de Reacción
 
