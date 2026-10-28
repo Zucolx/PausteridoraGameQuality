@@ -6020,6 +6020,9 @@
   const ACCENT = '#a46bff';
   const TARGETS = 5;
   const REACH = 72;
+  // Comodín "luz total": enciende toda la línea unos segundos (un uso por recorrido).
+  const LAMP_S = 3;
+  const LAMP_USES = 1;
 
   const DIFF = {
     facil: { light: 165, decoys: 0, guide: true, keepPins: true, penalty: 0, showUse: true, flicker: false },
@@ -6036,11 +6039,12 @@
     { id: 'tank', label: 'TANQUE', x: 110, y: 468, w: 120, h: 170, kind: 'tank' },
     { id: 'conv2', label: 'GUÍAS', x: 300, y: 590, w: 420, h: 34, kind: 'conveyor' },
   ];
-  // Puntos donde puede esconderse cada tipo de riesgo.
+  // Puntos donde puede esconderse cada tipo de riesgo. Todos se alcanzan caminando y con
+  // visión directa (sin una máquina en medio): lo comprueban las pruebas.
   const SPOTS = [
     { type: 'vidrio', x: 386, y: 192 },
     { type: 'vidrio', x: 386, y: 294 },
-    { type: 'vidrio', x: 336, y: 244 },
+    { type: 'vidrio', x: 436, y: 300 },
     { type: 'vidrio', x: 470, y: 586 },
     { type: 'sarro', x: 612, y: 416 },
     { type: 'sarro', x: 700, y: 494 },
@@ -6051,7 +6055,7 @@
     { type: 'levadura', x: 800, y: 222 },
     { type: 'levadura', x: 620, y: 628 },
     { type: 'biofilm', x: 854, y: 170 },
-    { type: 'biofilm', x: 914, y: 300 },
+    { type: 'biofilm', x: 884, y: 372 },
     { type: 'biofilm', x: 176, y: 642 },
     { type: 'biofilm', x: 214, y: 334 },
   ];
@@ -6090,7 +6094,8 @@
       target: null,
       tool: { sel: 0, phase: 'choose', progress: 0, shake: 0 },
       fact: null,
-      stats: { found: 0, firstTry: 0, errors: 0, decoys: 0 },
+      lamp: { uses: LAMP_USES, t: 0 },
+      stats: { found: 0, firstTry: 0, errors: 0, decoys: 0, lamp: 0 },
       flick: 1,
     };
     s.world = WORLD;
@@ -6126,6 +6131,61 @@
     }
   }
 
+  // ¿Hay una máquina entre el operario y el punto? (no se limpia "a través" de una cinta).
+  function segmentHitsRect(ax, ay, bx, by, r) {
+    let t0 = 0;
+    let t1 = 1;
+    const dx = bx - ax;
+    const dy = by - ay;
+    for (const [p, q] of [
+      [-dx, ax - r.x],
+      [dx, r.x + r.w - ax],
+      [-dy, ay - r.y],
+      [dy, r.y + r.h - ay],
+    ]) {
+      if (p === 0) {
+        if (q < 0) return false;
+        continue;
+      }
+      const t = q / p;
+      if (p < 0) {
+        if (t > t1) return false;
+        if (t > t0) t0 = t;
+      } else {
+        if (t < t0) return false;
+        if (t < t1) t1 = t;
+      }
+    }
+    return t0 <= t1;
+  }
+
+  function clearLine(a, b) {
+    return !MACHINES.some((m) => segmentHitsRect(a.x, a.y, b.x, b.y, { x: m.x + 1, y: m.y + 1, w: m.w - 2, h: m.h - 2 }));
+  }
+
+  // Encendido del comodín (0 → 1 al encender, se apaga suave al final).
+  function lampLevel(s) {
+    const t = s.lamp.t;
+    if (t <= 0) return 0;
+    const used = LAMP_S - t;
+    return Math.min(1, used / 0.2, t / 0.5);
+  }
+
+  function useLamp(s) {
+    if (s.lamp.t > 0) return;
+    if (s.lamp.uses <= 0) {
+      B.say(s.bubble, 'Ya usaste el comodín de luz total en este recorrido.', { kind: 'tip', life: 2.5 });
+      return;
+    }
+    s.lamp.uses--;
+    s.lamp.t = LAMP_S;
+    s.stats.lamp++;
+    // Todo lo que la luz deja ver queda marcado en la lista.
+    for (const h of s.hazards) if (!h.found) h.seen = true;
+    s.banner = D.makeBanner('LUZ TOTAL', '#fff2b0', `${LAMP_S} s para ver toda la línea`, 1.2);
+    D.sfx('alarm');
+  }
+
   function nearbyTarget(s) {
     const p = s.player;
     let best = null;
@@ -6133,7 +6193,7 @@
     for (const h of s.hazards) {
       if (h.found) continue;
       const d = Math.hypot(h.x - p.x, h.y - p.y);
-      if (d <= bestD && d <= lightRadius(s)) {
+      if (d <= bestD && d <= lightRadius(s) && clearLine(p, h)) {
         best = { kind: 'hazard', ref: h };
         bestD = d;
       }
@@ -6141,7 +6201,7 @@
     for (const dc of s.decoys) {
       if (dc.checked) continue;
       const d = Math.hypot(dc.x - p.x, dc.y - p.y);
-      if (d <= bestD && d <= lightRadius(s)) {
+      if (d <= bestD && d <= lightRadius(s) && clearLine(p, dc)) {
         best = { kind: 'decoy', ref: dc };
         bestD = d;
       }
@@ -6163,6 +6223,7 @@
     }
     // La linterna parpadea en difícil.
     s.flick = s.cfg.flicker && Math.sin(s.time * 1.7) > 0.93 ? 0.55 : 1;
+    s.lamp.t = Math.max(0, s.lamp.t - dt);
     if (s.endT > 0) {
       s.endT -= dt;
       if (s.endT <= 0) s.over = true;
@@ -6185,6 +6246,8 @@
     }
 
     const P = input.pressed;
+    // Comodín: C en el teclado, △ / Y en el mando (llega como "tab"), botón "Luz" en pantallas táctiles.
+    if (!s.target && (P.includes('joker') || P.includes('tab'))) useLamp(s);
     if (s.target) {
       if (P.includes('cancel') || (P.includes('interact') && s.tool.phase === 'choose')) {
         s.target = null;
@@ -6302,14 +6365,14 @@
         continue;
       }
       const d = Math.hypot(h.x - s.player.x, h.y - s.player.y);
-      const alpha = Math.max(0, Math.min(1, (R - d) / (R * 0.35)));
+      const alpha = Math.max(lampLevel(s), Math.min(1, (R - d) / (R * 0.35)));
       if (alpha > 0) monster(ctx, h.type, h.x, h.y, 22, t, alpha);
       else if (h.seen && s.cfg.keepPins) pin(ctx, h.x, h.y, t);
     }
     for (const dc of s.decoys) {
       if (dc.checked) continue;
       const d = Math.hypot(dc.x - s.player.x, dc.y - s.player.y);
-      const alpha = Math.max(0, Math.min(1, (R - d) / (R * 0.35)));
+      const alpha = Math.max(lampLevel(s), Math.min(1, (R - d) / (R * 0.35)));
       if (alpha > 0) decoyGlow(ctx, dc, t, alpha);
     }
     if (s.cfg.guide && !s.target) {
@@ -6429,7 +6492,7 @@
     o.clearRect(0, 0, w, h);
     o.setTransform(k, 0, 0, k, 0, 0);
     o.globalCompositeOperation = 'source-over';
-    o.fillStyle = 'rgba(3,1,6,0.95)';
+    o.fillStyle = `rgba(3,1,6,${0.95 * (1 - lampLevel(s))})`;
     o.fillRect(0, D.VIEW.hud, D.VIEW.mapWidth, D.VIEW.height - D.VIEW.hud);
     o.globalCompositeOperation = 'destination-out';
     const p = s.player;
@@ -6620,6 +6683,8 @@
     ctx.restore();
   }
 
+  const CTRL_LAMP = { key: 'C', pad: 'y' };
+
   function drawSidebar(s, ctx, t) {
     D.sidebar(ctx, 'FOCOS DE CONTAMINACIÓN');
     const x = D.VIEW.mapWidth + 18;
@@ -6642,8 +6707,15 @@
       D.text(ctx, tl.name, x + w + 8, y + 5, { size: 14, weight: 700 });
       D.text(ctx, s.cfg.showUse ? tl.use : tl.tag, x + 286, y + 5, { size: 11, color: tl.color, align: 'right' });
     });
+    // Comodín de luz total.
+    const ly = 452;
+    const on = s.lamp.t > 0;
+    const left = s.lamp.uses > 0;
+    const cw = D.control(ctx, CTRL_LAMP, x, ly, { size: 11, color: left || on ? '#fff2b0' : '#5a4a66' });
+    D.text(ctx, on ? `LUZ TOTAL · ${Math.ceil(s.lamp.t)} s` : 'Comodín: luz total 3 s', x + cw + 8, ly + 5, { size: 14, weight: 800, color: on ? '#fff2b0' : left ? T.ink : T.faint });
+    D.text(ctx, on ? 'encendida' : left ? `queda ${s.lamp.uses}` : 'usado', x + 286, ly + 5, { size: 11, weight: 700, color: left ? '#fff2b0' : T.faint, align: 'right' });
     const fact = s.fact && { kind: 'paper', label: `SABÍAS QUE… · ${s.fact.title}`, text: '', sub: s.fact.text, life: s.fact.life, max: s.fact.max };
-    B.dock(ctx, D.dockRect(440), { bubble: s.bubble, notices: [fact, s.banner], t });
+    B.dock(ctx, D.dockRect(476), { bubble: s.bubble, notices: [fact, s.banner], t });
     D.footer(ctx, [
       [{ key: 'WASD', pad: 'lstick' }, 'mover'],
       [{ key: 'E', pad: 'x' }, 'limpiar'],
@@ -6666,6 +6738,7 @@
         ['Herramienta correcta al primer intento', `${st.firstTry} de ${st.found}`, st.firstTry === st.found ? T.ok : T.warn],
         ['Errores de herramienta', String(st.errors), st.errors ? T.red : T.ok],
         ['Falsas alarmas revisadas', String(st.decoys), T.ink],
+        ['Comodín de luz total', st.lamp ? 'usado' : 'sin usar', T.ink],
         ['Puntuación de Calidad', `${score}/100`, D.rankColor(rank)],
       ],
       mistakes: s.bubble.log.slice(),
@@ -6708,14 +6781,15 @@
       'La línea está a oscuras: tu linterna UV revela lo que no se ve.',
       'Busca 5 "monstruos": vidrio roto, sarro, levadura seca y biofilm.',
       'Acércate, pulsa E y elige la herramienta correcta para limpiarlo.',
-      'Cada limpieza muestra una ficha "Sabías que" del manual.',
+      'Cada limpieza muestra una ficha "Sabías que" del manual. Comodín (C): luz total 3 s, una vez.',
     ],
-    touch: { stick: true, main: [{ pad: 'a', label: 'Aplicar' }, { pad: 'x', label: 'Limpiar' }, { pad: 'b', label: 'Salir' }], aux: [{ pad: 'lb', label: '' }, { pad: 'rb', label: '' }, { pad: 'lt', label: '' }, { pad: 'rt', label: '' }] },
+    touch: { stick: true, main: [{ pad: 'a', label: 'Aplicar' }, { pad: 'x', label: 'Limpiar' }, { pad: 'y', label: 'Luz' }, { pad: 'b', label: 'Salir' }], aux: [{ pad: 'lb', label: '' }, { pad: 'rb', label: '' }, { pad: 'lt', label: '' }, { pad: 'rt', label: '' }] },
     controls: [
       ['WASD', 'moverse', 'lstick'],
       ['E', 'limpiar / revisar', 'x'],
       ['1-4', 'herramienta', ['lb', 'rb', 'lt', 'rt']],
       ['ESPACIO', 'aplicar', 'a'],
+      ['C', 'comodín: luz total 3 s', 'y'],
     ],
     difficulties: {
       facil: ['Linterna grande y flecha hacia el foco más cercano', 'Las herramientas dicen para qué sirven', 'Sin penalización de tiempo'],
@@ -6725,6 +6799,7 @@
     create,
     monster,
   });
+  PF.Hunter = { MACHINES, SPOTS, DECOY_SPOTS, REACH, LAMP_S, clearLine };
 })();
 </script>
     <script>

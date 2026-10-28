@@ -69,7 +69,7 @@ test('Táctil: cada juego trae su mando virtual y los glifos muestran esos boton
     for (const b of [...(g.touch.main || []), ...(g.touch.aux || [])]) assert.ok(PF.Pad.BUTTONS.includes(b.pad), `${g.id}: ${b.pad}`);
   }
   const hunter = PF.Games.find((g) => g.id === 'hunter');
-  assert.deepEqual(Touch.layoutLabels(hunter.touch), { a: 'A', x: 'X', b: 'B', lb: '1', rb: '2', lt: '3', rt: '4' });
+  assert.deepEqual(Touch.layoutLabels(hunter.touch), { a: 'A', x: 'X', y: 'Y', b: 'B', lb: '1', rb: '2', lt: '3', rt: '4' });
   // En el menú, SHARE / VIEW abre la configuración.
   assert.deepEqual(PF.Pad.toMenu(['select']), ['config']);
 });

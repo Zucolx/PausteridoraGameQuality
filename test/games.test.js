@@ -106,13 +106,89 @@ test('CIP Rush: la limpieza completa libera un lote y la suciedad hace fallar el
   assert.notEqual(s.task.chemical, 'soda', 'nueva orden: hay que volver a empezar');
 });
 
+// Puntos del mapa del Cazador a los que se llega caminando desde el inicio (rejilla de 4 px).
+let walkable = null;
+function walkPoints(s) {
+  if (walkable) return walkable;
+  const step = 4;
+  const seen = new Set();
+  const start = [Math.round(s.world.start.x / step) * step, Math.round(s.world.start.y / step) * step];
+  const queue = [start];
+  seen.add(start.join());
+  walkable = [];
+  while (queue.length) {
+    const [x, y] = queue.pop();
+    walkable.push({ x, y });
+    for (const [dx, dy] of [[step, 0], [-step, 0], [0, step], [0, -step]]) {
+      const n = [x + dx, y + dy];
+      if (seen.has(n.join())) continue;
+      seen.add(n.join());
+      if (!W.collides(s.world, n[0], n[1])) queue.push(n);
+    }
+  }
+  return walkable;
+}
+
+// El punto caminable más cercano a p con visión directa (sin máquinas en medio).
+function approach(s, p) {
+  let best = null;
+  let bd = Infinity;
+  for (const w of walkPoints(s)) {
+    const d = Math.hypot(w.x - p.x, w.y - p.y);
+    if (d < bd && d >= 10 && PF.Hunter.clearLine(w, p)) {
+      bd = d;
+      best = w;
+    }
+  }
+  return { ...best, d: bd };
+}
+
+test('Cazador: todos los focos y falsas alarmas se alcanzan caminando y sin atravesar máquinas', () => {
+  const s = game('hunter').create('normal', { seed: 1 });
+  for (const p of [...PF.Hunter.SPOTS, ...PF.Hunter.DECOY_SPOTS]) {
+    const a = approach(s, p);
+    assert.ok(a.d <= PF.Hunter.REACH - 12, `(${p.x}, ${p.y}) queda a ${a.d.toFixed(0)} px del punto caminable más cercano`);
+  }
+});
+
+test('Cazador: no se limpia a través de una cinta u otra máquina', () => {
+  const s = game('hunter').create('normal', { seed: 1 });
+  s.hazards[0] = { id: 0, type: 'levadura', x: 520, y: 222, seen: false, found: false, firstTry: true };
+  s.decoys = [];
+  // Debajo del transportador (y 226-262): a 56 px, pero con la cinta en medio.
+  s.player.x = 520;
+  s.player.y = 280;
+  assert.equal(W.collides(s.world, s.player.x, s.player.y), false);
+  press(s, 'interact');
+  assert.equal(s.target, null, 'la cinta tapa el foco');
+  // Desde arriba, con visión directa, sí.
+  s.player.y = 200;
+  press(s, 'interact');
+  assert.equal(s.target, s.hazards[0]);
+});
+
+test('Cazador: el comodín enciende toda la línea 3 s, una sola vez', () => {
+  const s = game('hunter').create('dificil', { seed: 2 });
+  assert.ok(s.hazards.every((h) => !h.seen));
+  press(s, 'joker');
+  assert.equal(s.lamp.t, PF.Hunter.LAMP_S);
+  assert.equal(s.lamp.uses, 0);
+  assert.ok(s.hazards.every((h) => h.seen), 'todos los focos quedan marcados');
+  tick(s, 3.1);
+  assert.equal(s.lamp.t, 0, 'se apaga a los 3 s');
+  // △ / Y en el mando llega como "tab": ya no quedan usos.
+  press(s, 'tab');
+  assert.equal(s.lamp.t, 0);
+  assert.match(s.bubble.cur.message, /Ya usaste el comodín/);
+  assert.equal(s.report().rows.find((r) => r[0] === 'Comodín de luz total')[1], 'usado');
+});
+
 test('Cazador: herramienta equivocada = error con explicación; la correcta elimina el riesgo', () => {
   const s = game('hunter').create('normal', { seed: 5 });
   assert.equal(s.hazards.length, 5);
   assert.deepEqual([...new Set(s.hazards.map((h) => h.type))].sort(), ['biofilm', 'levadura', 'sarro', 'vidrio']);
   const h = s.hazards[0];
-  s.player.x = h.x + 20;
-  s.player.y = h.y + 30;
+  Object.assign(s.player, approach(s, h));
   press(s, 'interact');
   assert.equal(s.target, h);
   const right = M.TOOL_ORDER.indexOf(M.HAZARDS[h.type].tool);
@@ -131,8 +207,7 @@ test('Cazador: herramienta equivocada = error con explicación; la correcta elim
 test('Cazador: encontrar los 5 focos sin errores da rango S', () => {
   const s = game('hunter').create('facil', { seed: 6 });
   for (const h of s.hazards) {
-    s.player.x = h.x + 20;
-    s.player.y = h.y + 30;
+    Object.assign(s.player, approach(s, h));
     press(s, 'interact');
     press(s, String(M.TOOL_ORDER.indexOf(M.HAZARDS[h.type].tool) + 1));
     hold(s, 1.3);

@@ -219,6 +219,15 @@ limpieza muestra una ficha "Sabías que". Una herramienta equivocada abre la bur
 error y, en Normal y Difícil, resta tiempo. Difícil reduce la luz, la hace parpadear y
 añade más falsas alarmas.
 
+- **Todos los focos se pueden alcanzar caminando.** Una prueba recorre el mapa con las
+  mismas colisiones del juego y comprueba que a cada foco y falsa alarma se llega sin
+  atravesar máquinas.
+- **No se limpia a través de una máquina:** si hay una cinta, la estrella o el tanque
+  entre el operario y el foco, hay que rodearla.
+- **Comodín de luz total** (C, △ / Y o el botón "Luz" en pantallas táctiles): enciende
+  toda la línea durante 3 s y marca todos los focos en la lista. Se puede usar una vez
+  por recorrido, y el reporte indica si se usó.
+
 ### 4 · Línea en Paro
 
 Salta un aviso como *"Línea detenida hace 2 horas"*. Hay que aplicar el **plan de
