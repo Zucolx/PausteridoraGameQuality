@@ -14,8 +14,8 @@ function tick(s, seconds, inp = input()) {
 const press = (s, ...keys) => tick(s, DT, input({ pressed: keys }));
 const hold = (s, seconds) => tick(s, seconds, input({ space: true }));
 
-test('la colección registra los seis juegos con sus tres dificultades', () => {
-  assert.deepEqual(PF.Games.map((g) => g.id).sort(), ['admin', 'cip', 'hunter', 'pasteurizer', 'pu', 'reaction', 'stop']);
+test('la colección registra los ocho juegos con sus tres dificultades', () => {
+  assert.deepEqual(PF.Games.map((g) => g.id).sort(), ['admin', 'cip', 'hunter', 'pasteurizer', 'pu', 'reaction', 'signs', 'stop']);
   for (const g of PF.Games) {
     for (const d of ['facil', 'normal', 'dificil']) {
       assert.ok(g.difficulties[d].length >= 2, `${g.id} ${d}`);
@@ -816,4 +816,73 @@ test('Táctil: Control de UP, Supervisor y Reacción responden a toques en su pr
   assert.equal(rx.stats.guide, 1);
   tap(rx, 640, 360);
   assert.equal(rx.help, false);
+});
+
+// ------------------------------------------------------------ Pictograma Correcto
+
+const SG = PF.Signs;
+
+test('Pictograma: máximo 3 preguntas, sin repetir, con la respuesta entre las opciones', () => {
+  for (const [diff, n] of [['facil', 3], ['normal', 4], ['dificil', 5]]) {
+    for (let seed = 1; seed <= 20; seed++) {
+      const s = game('signs').create(diff, { seed });
+      assert.equal(s.order.length, 3);
+      assert.equal(new Set(s.order).size, 3, 'sin preguntas repetidas');
+      while (!s.over) {
+        assert.equal(s.options.length, n);
+        assert.equal(new Set(s.options).size, n);
+        assert.ok(s.options.includes(s.order[s.q]));
+        s.update(DT, input({ pressed: ['confirm'] }));
+        tick(s, 6);
+      }
+    }
+  }
+  assert.deepEqual(SG.IDS.sort(), ['atrapamiento', 'electrico', 'maquinaria', 'particulas', 'tropiezo']);
+});
+
+test('Pictograma: acertar rápido da hasta 100 por pregunta; fallar explica por qué', () => {
+  const s = game('signs').create('normal', { seed: 4 });
+  const pick = (id) => {
+    const i = s.options.indexOf(id);
+    const c = SG.cards(s.options.length)[i];
+    s.update(DT, input({ clicks: [{ x: c.x + c.w / 2, y: c.y + c.h / 2 }] }));
+  };
+  pick(s.order[0]);
+  assert.equal(s.phase, 'feedback');
+  assert.ok(s.stats.points >= 99, 'respuesta inmediata');
+  assert.equal(s.bubble.cur.kind, 'ok');
+  press(s, 'confirm');
+  assert.equal(s.q, 1, 'ENTER pasa a la siguiente');
+  const id = s.order[1];
+  const wrong = s.options.find((o) => o !== id);
+  pick(wrong);
+  assert.equal(s.bubble.cur.kind, 'error');
+  assert.match(s.bubble.cur.message, new RegExp(`«${SG.SIGNS[wrong].name}» ${SG.SIGNS[wrong].warns}\\. Aquí va «${SG.SIGNS[id].name}»`));
+  tick(s, 5);
+  assert.equal(s.q, 2, 'la explicación pasa sola tras unos segundos');
+  // Sin responder: se acaba el tiempo.
+  tick(s, 8.1);
+  assert.equal(s.phase, 'feedback');
+  assert.equal(s.stats.timeouts, 1);
+  assert.equal(s.bubble.cur.title, 'Tiempo agotado');
+  tick(s, 6);
+  assert.equal(s.over, true);
+  const rep = s.report();
+  assert.equal(rep.rows.length, 5);
+  assert.match(rep.headline, /1 de 3 pictogramas/);
+  assert.ok(rep.score >= 33 && rep.score <= 34);
+});
+
+test('Pictograma: teclado (flechas, 1-5) y mando (cruceta y ✕/A)', () => {
+  const s = game('signs').create('dificil', { seed: 9 });
+  press(s, 'right');
+  assert.equal(s.sel, 1);
+  s.update(DT, input({ pad: { pressed: ['down'] } }));
+  assert.equal(s.sel, 4, 'abajo en la cuadrícula 3 + 2');
+  s.update(DT, input({ pad: { pressed: ['a'] } }));
+  assert.equal(s.answers[0].chosen, s.options[4]);
+  press(s, 'confirm');
+  const i = s.options.indexOf(s.order[1]);
+  press(s, String(i + 1));
+  assert.equal(s.answers[1].ok, true);
 });

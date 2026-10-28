@@ -1,6 +1,6 @@
 # Lo que no se ve, también se limpia
 
-Colección de siete juegos cortos sobre calidad, gestión y seguridad en el envasado de cerveza. Usa la
+Colección de ocho juegos cortos sobre calidad, gestión y seguridad en el envasado de cerveza. Usa la
 estética del afiche (negros, naranjas quemados, latón steampunk y toques de Halloween).
 Cada juego tiene **tres dificultades** (Fácil, Normal y Difícil) y termina con un
 **Reporte de Calidad** con rango S/A/B/C. Se juega con **teclado y ratón, con mando de
@@ -29,6 +29,7 @@ Para que no estorben, los mensajes van **a un lado**:
 | 5 | **Control de UP** · Unidades de Pasteurización | Panel de control sin muñeco: mantener cada lote entre 24 y 30 UP (ideal 26) con la temperatura y decidir con la llave de paso si va a la llenadora o al descarte. Duración ajustable de 40 a 60 s. |
 | 6 | **Supervisor de Turno** · LEF · GLY · OSE | Administración del turno: leer el tablero de LEF, GLY y OSE para descubrir dónde se pierden las horas (modo *Diagnóstico*) o marcar, en cada pérdida del reporte, todos los KPIs que afecta (modo *¿Qué KPIs caen?*: se pueden marcar varios). 6 turnos de 12 h simulados en 6 s, con 30, 40 o 50 s para responder cada uno. |
 | 7 | **Guía Rápida de Reacción** · Une los puntos | Unir los puntos en orden para armar la ruta de reacción de cada emergencia: derrame de sustancia química, contacto con sustancia química, conato de incendio y emergencia, hasta su procedimiento ACADIA. |
+| 8 | **Pictograma Correcto** · Respuesta rápida | 3 preguntas rápidas: se ve una escena de la planta y hay que elegir el pictograma de seguridad que le corresponde (proyección de partículas, atrapamiento, tropiezo, riesgo eléctrico o maquinaria en funcionamiento). |
 
 ## Cómo jugar
 
@@ -416,6 +417,37 @@ eliges, se explica por qué no va.
 El Reporte de Calidad muestra los errores en cada situación, las consultas a la guía y
 el tiempo usado.
 
+### 8 · Pictograma Correcto
+
+Un juego de respuestas rápidas para relacionar cada riesgo de la planta con su
+pictograma de advertencia. Cada partida tiene **3 preguntas** (como máximo), sin
+repetir. En cada una se ve una escena dibujada y hay que elegir el pictograma correcto
+antes de que se acabe el tiempo.
+
+| Escena | Pictograma correcto |
+|---|---|
+| Una botella estalla en la línea y lanza vidrio | ¡Atención! Riesgo de proyección de partículas |
+| Cadenas, piñones y transportador en movimiento | ¡Atención! Riesgo de atrapamiento |
+| Piso mojado en el pasillo de la línea | ¡Atención! Riesgo de tropezar |
+| Tablero eléctrico abierto | Riesgo eléctrico |
+| Montacargas circulando en el patio | Peligro: maquinaria en funcionamiento |
+
+- Acertar suma 60 puntos y la rapidez hasta 40 más (100 por pregunta).
+- Si fallas, la burbuja dice de qué advierte el pictograma elegido y por qué la escena
+  lleva el otro. Después de cada respuesta se marca el correcto (✔) y el elegido (✖);
+  se pasa a la siguiente con ENTER, ✕ / A o tocando, o sola tras unos segundos.
+- Se responde con ← → (y ↑ ↓) + ENTER, con los números 1-5, con la cruceta y ✕ / A, o
+  tocando la tarjeta.
+
+| Dificultad | Opciones | Tiempo por pregunta | Ayudas |
+|---|---|---|---|
+| Fácil | 3, con su nombre | 12 s | la escena trae su descripción |
+| Normal | 4, solo el pictograma | 8 s | la escena trae su descripción |
+| Difícil | los 5, sin nombre | 6 s | sin descripción |
+
+Las escenas y los pictogramas se dibujan en el propio juego, sin imágenes externas,
+para que siga siendo un solo archivo que funciona sin conexión.
+
 ## Estructura
 
 ```
@@ -433,7 +465,7 @@ src/core/screens.js     menú, selector de dificultad, pausa y Reporte de Calida
 src/content/manual.js   contenido técnico de los juegos (revisar con el manual)
 src/content/kpi.js      LEF, GLY y OSE: fórmulas (EPT), catálogo de 24 pérdidas y explicaciones
 src/content/reaction.js Guía Rápida de Reacción: situaciones, puntos con su texto completo y rutas
-src/games/*.js          un archivo por juego (CIP, cazador, paro, control de UP, supervisor, reacción, adaptador pasteurizadora)
+src/games/*.js          un archivo por juego (CIP, cazador, paro, control de UP, supervisor, reacción, pictogramas, adaptador pasteurizadora)
 src/config.js, sim.js, minigames.js, render.js   motor de la Pasteurizadora Flash
 src/audio.js            efectos sintetizados con WebAudio
 src/main.js             teclado, ratón, toque, mando, bucle, pantallas y configuración

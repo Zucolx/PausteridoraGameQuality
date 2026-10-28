@@ -20,6 +20,7 @@ require('../src/content/kpi.js');
 require('../src/games/admin.js');
 require('../src/content/reaction.js');
 require('../src/games/reaction.js');
+require('../src/games/signs.js');
 
 const PF = globalThis.PF;
 const C = PF.CONFIG;

@@ -34,6 +34,7 @@ test('el exportable es un único HTML sin recursos externos', () => {
     "id: 'pu'",
     "id: 'admin'",
     "id: 'reaction'",
+    "id: 'signs'",
     'PF.Reaction = {',
     'PF.KPI = {',
     'PF.Pad = {',

@@ -55,7 +55,7 @@
   };
   const DIR = { KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right' };
   const NAMED = { KeyE: 'interact', Escape: 'cancel', KeyQ: 'cancel', Space: 'space', Enter: 'confirm', NumpadEnter: 'confirm', Tab: 'tab', KeyY: 'y', KeyX: 'x', KeyH: 'help', KeyC: 'joker', KeyV: 'view' };
-  const DIGIT = { Digit1: '1', Digit2: '2', Digit3: '3', Digit4: '4', Numpad1: '1', Numpad2: '2', Numpad3: '3', Numpad4: '4' };
+  const DIGIT = { Digit1: '1', Digit2: '2', Digit3: '3', Digit4: '4', Digit5: '5', Numpad1: '1', Numpad2: '2', Numpad3: '3', Numpad4: '4', Numpad5: '5' };
   const PREVENT = new Set(['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 
   function loadRecords() {
