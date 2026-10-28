@@ -1,5 +1,11 @@
 // Configuración de la colección (protegida con clave): qué juegos aparecen en el menú
 // y si la dificultad queda fijada para todos. Se guarda en este navegador/dispositivo.
+//
+// SharePoint muestra el HTML en un marco aislado (sandbox sin allow-same-origin): ahí el
+// navegador lanza SecurityError con solo leer `localStorage`. Por eso el almacenamiento se
+// pide con cuidado y, si no hay, todo vive en memoria mientras la página esté abierta.
+// La versión "sin ajustes" (pnpm build) usa siempre los valores por defecto y no ofrece
+// la pantalla de configuración (PF.BUILD.ajustes === false).
 (function () {
   'use strict';
   const PF = globalThis.PF || (globalThis.PF = {});
@@ -10,6 +16,27 @@
   const PASSWORD = 'Odiseo';
   const DEFAULTS = { disabled: ['pasteurizer', 'stop'], difficulty: null };
   const DIFFS = ['facil', 'normal', 'dificil'];
+
+  // ¿Esta versión ofrece la pantalla de configuración?
+  function editable() {
+    return !(PF.BUILD && PF.BUILD.ajustes === false);
+  }
+
+  // localStorage si el navegador lo permite; si no (marco aislado, modo privado…), null.
+  function storage() {
+    try {
+      const ls = globalThis.localStorage;
+      if (!ls) return null;
+      ls.getItem(KEY);
+      return ls;
+    } catch {
+      return null;
+    }
+  }
+
+  function persistent() {
+    return !!storage();
+  }
 
   function check(pw) {
     return String(pw || '').trim().toLowerCase() === PASSWORD.toLowerCase();
@@ -23,18 +50,20 @@
     };
   }
 
-  function load(storage = globalThis.localStorage) {
+  function load(store = storage()) {
+    if (!editable()) return clean(DEFAULTS);
     try {
-      const raw = storage && storage.getItem(KEY);
+      const raw = store && store.getItem(KEY);
       return clean(raw ? JSON.parse(raw) : DEFAULTS);
     } catch {
       return clean(DEFAULTS);
     }
   }
 
-  function save(cfg, storage = globalThis.localStorage) {
+  function save(cfg, store = storage()) {
     try {
-      if (storage) storage.setItem(KEY, JSON.stringify(clean(cfg)));
+      if (!store) return false;
+      store.setItem(KEY, JSON.stringify(clean(cfg)));
       return true;
     } catch {
       return false; // sin almacenamiento: vale mientras dure la pestaña
@@ -61,5 +90,5 @@
     return true;
   }
 
-  PF.Settings = { KEY, PASSWORD, DEFAULTS, DIFFS, check, clean, load, save, enabled, activeGames, toggle };
+  PF.Settings = { KEY, PASSWORD, DEFAULTS, DIFFS, editable, storage, persistent, check, clean, load, save, enabled, activeGames, toggle };
 })();

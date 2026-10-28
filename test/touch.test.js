@@ -108,3 +108,39 @@ test('Configuración: la clave es Odiseo y siempre queda al menos un juego activ
   assert.deepEqual(cfg.disabled, []);
   assert.deepEqual(Settings.activeGames([{ id: 'a' }], { disabled: ['a'] }).map((g) => g.id), ['a'], 'nunca un menú vacío');
 });
+
+test('Configuración: sin almacenamiento (SharePoint) no falla y todo vive en memoria', () => {
+  // En un marco aislado sin allow-same-origin, leer localStorage lanza SecurityError.
+  const desc = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    get() {
+      throw new Error("SecurityError: Failed to read the 'localStorage' property from 'Window'");
+    },
+  });
+  try {
+    assert.equal(Settings.storage(), null);
+    assert.equal(Settings.persistent(), false);
+    const cfg = Settings.load();
+    assert.deepEqual(cfg, { disabled: ['pasteurizer', 'stop'], difficulty: null });
+    cfg.difficulty = 'normal';
+    assert.equal(Settings.save(cfg), false, 'no se guarda, pero tampoco lanza');
+  } finally {
+    if (desc) Object.defineProperty(globalThis, 'localStorage', desc);
+    else delete globalThis.localStorage;
+  }
+});
+
+test('Configuración: la versión sin ajustes usa siempre los valores por defecto', () => {
+  const mem = new Map([[Settings.KEY, JSON.stringify({ disabled: [], difficulty: 'dificil' })]]);
+  const storage = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v) };
+  assert.equal(Settings.editable(), true);
+  assert.equal(Settings.load(storage).difficulty, 'dificil');
+  PF.BUILD = { ajustes: false };
+  try {
+    assert.equal(Settings.editable(), false);
+    assert.deepEqual(Settings.load(storage), { disabled: ['pasteurizer', 'stop'], difficulty: null });
+  } finally {
+    delete PF.BUILD;
+  }
+});

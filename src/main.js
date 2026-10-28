@@ -60,7 +60,8 @@
 
   function loadRecords() {
     try {
-      return JSON.parse(localStorage.getItem(RECORDS_KEY)) || {};
+      const store = Settings.storage();
+      return (store && JSON.parse(store.getItem(RECORDS_KEY))) || {};
     } catch {
       return {};
     }
@@ -68,7 +69,8 @@
 
   function saveRecords() {
     try {
-      localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
+      const store = Settings.storage();
+      if (store) store.setItem(RECORDS_KEY, JSON.stringify(records));
     } catch {
       // Sin almacenamiento: los récords duran lo que dure la pestaña.
     }
@@ -219,7 +221,7 @@
         sel = digit - 1;
         openSetup(list[sel]);
       } else if (action === 'confirm' || action === 'start') openSetup(list[sel]);
-      else if (action === 'config') openLogin();
+      else if (action === 'config' && Settings.editable()) openLogin();
     } else if (screen === 'setup') {
       if (action === 'up') moveFocus(-1);
       else if (action === 'down') moveFocus(1);
@@ -283,6 +285,7 @@
   }
 
   // Ventana de la clave: un campo HTML para que aparezca el teclado en pantallas táctiles.
+  // Sin <form>: en el marco aislado de SharePoint (sin allow-forms) no se puede enviar.
   const login = buildLogin();
 
   function buildLogin() {
@@ -290,22 +293,21 @@
     wrap.id = 'login';
     wrap.hidden = true;
     wrap.innerHTML = `
-      <form autocomplete="off">
+      <div class="box" role="dialog" aria-label="Configuración">
         <h2>⚙ Configuración</h2>
         <p>Escribe la clave para cambiar los juegos activos y la dificultad general.</p>
         <input type="password" name="clave" placeholder="Clave" aria-label="Clave" autocapitalize="off" autocorrect="off" spellcheck="false" />
         <p class="err" aria-live="polite"></p>
         <div class="row">
           <button type="button" class="cancel">Cancelar</button>
-          <button type="submit" class="ok">Entrar</button>
+          <button type="button" class="ok">Entrar</button>
         </div>
-      </form>`;
+      </div>`;
     document.body.appendChild(wrap);
-    const form = wrap.querySelector('form');
     const input = wrap.querySelector('input');
     const err = wrap.querySelector('.err');
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
+    input.setAttribute('autocomplete', 'off');
+    function enter() {
       if (Settings.check(input.value)) {
         hide();
         cfgFocus = 0;
@@ -316,6 +318,13 @@
         input.value = '';
         input.focus();
         D.sfx('oops');
+      }
+    }
+    wrap.querySelector('.ok').addEventListener('click', enter);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        enter();
       }
     });
     wrap.querySelector('.cancel').addEventListener('click', () => closeLogin());
@@ -425,7 +434,7 @@
   // Un clic o un toque en el punto p (coordenadas del juego).
   function tapAt(p) {
     if (screen === 'menu') {
-      if (inside(p, S.gearButton())) return openLogin();
+      if (Settings.editable() && inside(p, S.gearButton())) return openLogin();
       if (canFullscreen && inside(p, S.fullscreenButton())) return toggleFullscreen();
       const list = menuGames();
       const i = S.menuCards(list.length).findIndex((c) => inside(p, c));
@@ -552,7 +561,13 @@
   }
 
   function pollPad() {
-    const list = navigator.getGamepads ? navigator.getGamepads() : [];
+    // En marcos aislados (SharePoint) el navegador puede negar el acceso a los mandos.
+    let list = [];
+    try {
+      list = navigator.getGamepads ? navigator.getGamepads() : [];
+    } catch {
+      list = [];
+    }
     const gp = Array.from(list || []).find((p) => p && p.connected);
     let real = null;
     if (gp) {
@@ -693,10 +708,10 @@
     } else {
       D.begin(r);
       const fullscreen = canFullscreen && IS.device !== 'ps' && IS.device !== 'xbox';
-      if (screen === 'menu' || screen === 'login') S.drawMenu(ctx, r.t, menuGames(), Math.min(sel, menuGames().length - 1), records, { fullscreen });
+      if (screen === 'menu' || screen === 'login') S.drawMenu(ctx, r.t, menuGames(), Math.min(sel, menuGames().length - 1), records, { fullscreen, settings: Settings.editable() });
       else if (screen === 'setup') S.drawSetup(ctx, r.t, game(), lockedDiff() >= 0 ? lockedDiff() : diffSel, records, choiceValues(), setupFocus, { locked: lockedDiff() >= 0 });
       else if (screen === 'report') S.drawReport(ctx, r.t, game(), diffId(), report, (records[game().id] || {})[diffId()], isRecord, { alt: reportAlt() });
-      else if (screen === 'config') S.drawConfig(ctx, r.t, ALL, settings, cfgFocus);
+      else if (screen === 'config') S.drawConfig(ctx, r.t, ALL, settings, cfgFocus, { persistent: Settings.persistent() });
     }
     if (turned) drawRotate(ctx);
     requestAnimationFrame(frame);

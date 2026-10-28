@@ -131,9 +131,10 @@
     D.text(ctx, caption, rc.x + rc.w / 2, rc.y + 58, { size: 11, weight: 700, color: T.faint, align: 'center' });
   }
 
-  function drawMenu(ctx, t, games, sel, records, { fullscreen = false } = {}) {
+  // settings: esta versión ofrece la configuración (la versión "sin ajustes" no).
+  function drawMenu(ctx, t, games, sel, records, { fullscreen = false, settings = true } = {}) {
     backdrop(ctx, t);
-    iconButton(ctx, gearButton(), '⚙', 'ajustes');
+    if (settings) iconButton(ctx, gearButton(), '⚙', 'ajustes');
     if (fullscreen) iconButton(ctx, fullscreenButton(), '⛶', 'pantalla');
     glowText(ctx, 'LO QUE NO SE VE,', V.width / 2, 92, 54, T.ink, T.orange);
     glowText(ctx, 'TAMBIÉN SE LIMPIA', V.width / 2, 150, 60, T.orange, T.orangeDark);
@@ -198,7 +199,7 @@
         [
           [{ key: '← →', pad: 'dpadLR' }, 'elegir juego'],
           [{ key: 'ENTER', pad: 'a' }, 'continuar'],
-          [{ key: 'C', pad: 'select' }, 'ajustes'],
+          ...(settings ? [[{ key: 'C', pad: 'select' }, 'ajustes']] : []),
         ].concat(device === 'keyboard' ? [[{ key: 'M' }, 'sonido']] : []),
         V.width / 2,
         664,
@@ -398,10 +399,12 @@
     return items;
   }
 
-  function drawConfig(ctx, t, games, cfg, focus) {
+  // persistent: el navegador deja guardar (en SharePoint no: dura hasta cerrar la página).
+  function drawConfig(ctx, t, games, cfg, focus, { persistent = true } = {}) {
     backdrop(ctx, t);
     glowText(ctx, '⚙ CONFIGURACIÓN', V.width / 2, 76, 44, T.ink, T.orange);
-    D.text(ctx, 'Se guarda en este dispositivo', V.width / 2, 112, { size: 17, weight: 600, color: T.dim, align: 'center' });
+    if (persistent) D.text(ctx, 'Se guarda en este dispositivo', V.width / 2, 112, { size: 17, weight: 600, color: T.dim, align: 'center' });
+    else D.text(ctx, '⚠ Este sitio (p. ej. SharePoint) no deja guardar: los cambios duran hasta cerrar la página', V.width / 2, 112, { size: 17, weight: 700, color: T.warn, align: 'center' });
     D.text(ctx, 'JUEGOS ACTIVOS', 60, 152, { size: 16, weight: 800, color: T.dim });
     D.text(ctx, 'DIFICULTAD GENERAL', 720, 152, { size: 16, weight: 800, color: T.dim });
     const items = configItems(games);

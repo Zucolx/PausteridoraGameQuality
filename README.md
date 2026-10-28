@@ -33,7 +33,21 @@ Para que no estorben, los mensajes van **a un lado**:
 ## Cómo jugar
 
 **Sin conexión:** descarga [`dist/lo-que-no-se-ve.html`](dist/lo-que-no-se-ve.html) y
-ábrelo con doble clic en cualquier navegador moderno. Es un único archivo (~500 KB) con
+ábrelo con doble clic en cualquier navegador moderno. Hay dos versiones:
+
+- [`lo-que-no-se-ve.html`](dist/lo-que-no-se-ve.html): **con configuración** (clave, ver
+  más abajo).
+- [`lo-que-no-se-ve-sin-ajustes.html`](dist/lo-que-no-se-ve-sin-ajustes.html): **sin
+  configuración**. No tiene botón ⚙ y usa siempre los valores por defecto: Pasteurizadora
+  Flash y Línea en Paro desactivadas, y cada jugador elige la dificultad.
+
+**SharePoint:** las dos versiones se abren directamente desde SharePoint. SharePoint
+muestra el HTML en un marco aislado que no deja guardar nada en el navegador; ahí el
+juego funciona igual, pero los récords y la configuración duran solo mientras la página
+esté abierta. La pantalla de configuración lo avisa. Si se quiere que los récords o la
+configuración se guarden, hay que descargar el archivo y abrirlo con doble clic.
+
+Cada versión es un único archivo (~530 KB) con
 el código y las fuentes incrustados: no pide nada a internet, así que se puede copiar a
 un USB o mandar por correo.
 
@@ -124,13 +138,15 @@ conexión y la clave está dentro del propio archivo.
 ### Generar el exportable
 
 ```
-pnpm build                      # → dist/lo-que-no-se-ve.html
-pnpm build ruta/otro-nombre.html
+pnpm build                                        # → las dos versiones en dist/
+node scripts/build.mjs ruta/otro-nombre.html      # una sola, con configuración
+node scripts/build.mjs ruta/otro.html --sin-ajustes
 ```
 
 `scripts/build.mjs` toma `index.html`, incrusta cada `<script src>` y convierte las fuentes
-en `data:` URIs. Si queda algún recurso externo, el build falla. El archivo de `dist/` se
-versiona para poder descargarlo desde GitHub. `pnpm test` avisa si quedó desactualizado,
+en `data:` URIs. La versión sin ajustes es igual, con una marca al inicio que oculta la
+configuración. Si queda algún recurso externo, el build falla. Los archivos de `dist/` se
+versionan para poder descargarlos desde GitHub. `pnpm test` avisa si quedaron desactualizados,
 así que después de tocar `src/` hay que volver a ejecutar `pnpm build`.
 
 ## Contenido técnico: revisar con el manual
