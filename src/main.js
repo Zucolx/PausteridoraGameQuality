@@ -35,6 +35,7 @@
   let diffSel = 1;
   let choiceSel = {};
   let cfgFocus = 0;
+  let info = null; // juego cuya ventana de instrucciones está abierta (menú o pantalla de inicio)
   let inst = null;
   let report = null;
   let isRecord = false;
@@ -213,6 +214,11 @@
   function shell(action, digit) {
     const dirs = ['up', 'down', 'left', 'right'];
     const list = menuGames();
+    // Instrucciones abiertas: cualquier botón de aceptar, volver o △/Y las cierra.
+    if (info) {
+      if (['back', 'confirm', 'alt', 'start', 'config'].includes(action)) info = null;
+      return;
+    }
     if (screen === 'menu') {
       sel = Math.min(sel, list.length - 1);
       if (action === 'left') sel = (sel + list.length - 1) % list.length;
@@ -222,6 +228,7 @@
         openSetup(list[sel]);
       } else if (action === 'confirm' || action === 'start') openSetup(list[sel]);
       else if (action === 'config' && Settings.editable()) openLogin();
+      else if (action === 'alt') info = list[sel];
     } else if (screen === 'setup') {
       if (action === 'up') moveFocus(-1);
       else if (action === 'down') moveFocus(1);
@@ -233,6 +240,7 @@
         startGame();
       } else if (action === 'confirm' || action === 'start') startGame();
       else if (action === 'back') toMenu();
+      else if (action === 'alt') info = game();
     } else if (screen === 'report') {
       if (action === 'confirm' || action === 'start') startGame();
       else if (action === 'alt' && reportAlt()) openSetup(game());
@@ -374,6 +382,9 @@
     }
     if (screen !== 'play') {
       if (e.repeat && !DIR[code]) return;
+      if (info && code === 'KeyI') return shell('back');
+      if (screen === 'menu' && code === 'KeyI') return shell('alt');
+      if (screen === 'setup' && code === 'KeyI') return shell('alt');
       if (screen === 'menu' && code === 'KeyC') return shell('config');
       if (DIGIT[code]) return shell('digit', +DIGIT[code]);
       // En el reporte, D cambia de dificultad aunque también sea "derecha".
@@ -433,17 +444,33 @@
 
   // Un clic o un toque en el punto p (coordenadas del juego).
   function tapAt(p) {
+    // Instrucciones abiertas: tocar en cualquier parte las cierra.
+    if (info) {
+      info = null;
+      return;
+    }
     if (screen === 'menu') {
       if (Settings.editable() && inside(p, S.gearButton())) return openLogin();
       if (canFullscreen && inside(p, S.fullscreenButton())) return toggleFullscreen();
       const list = menuGames();
-      const i = S.menuCards(list.length).findIndex((c) => inside(p, c));
+      const cards = S.menuCards(list.length);
+      const ii = cards.findIndex((c) => inside(p, S.cardInfoButton(c)));
+      if (ii >= 0) {
+        sel = ii;
+        info = list[ii];
+        return;
+      }
+      const i = cards.findIndex((c) => inside(p, c));
       if (i >= 0) {
         sel = i;
         openSetup(list[i]);
       }
     } else if (screen === 'setup') {
       if (inside(p, S.backButton())) return shell('back');
+      if (inside(p, S.infoButton())) {
+        info = game();
+        return;
+      }
       const choices = S.choicesOf(game());
       const i = S.diffCards(choices.length).findIndex((c) => inside(p, c));
       let hit = null;
@@ -685,7 +712,7 @@
     if (turned && screen === 'play') pause();
     // Glifos de los juegos: con el dedo, muestran los botones virtuales del juego en curso.
     // En la pantalla de inicio, los controles muestran los botones que tendrá el juego.
-    const layout = screen === 'play' ? tp.layout : screen === 'setup' ? game().touch || TOUCH_DEFAULT : null;
+    const layout = screen === 'play' ? tp.layout : info ? info.touch || TOUCH_DEFAULT : screen === 'setup' ? game().touch || TOUCH_DEFAULT : null;
     IS.touchLabels = Touch.layoutLabels(layout);
     IS.touchStick = !!(layout && layout.stick);
     const pad = pollPad();
@@ -712,6 +739,8 @@
       else if (screen === 'setup') S.drawSetup(ctx, r.t, game(), lockedDiff() >= 0 ? lockedDiff() : diffSel, records, choiceValues(), setupFocus, { locked: lockedDiff() >= 0 });
       else if (screen === 'report') S.drawReport(ctx, r.t, game(), diffId(), report, (records[game().id] || {})[diffId()], isRecord, { alt: reportAlt() });
       else if (screen === 'config') S.drawConfig(ctx, r.t, ALL, settings, cfgFocus, { persistent: Settings.persistent() });
+      if (info && (screen === 'menu' || screen === 'setup')) S.drawInstructions(ctx, r.t, info);
+      else info = null;
     }
     if (turned) drawRotate(ctx);
     requestAnimationFrame(frame);
@@ -724,6 +753,9 @@
     },
     get screen() {
       return screen;
+    },
+    get info() {
+      return info && info.id;
     },
     get settings() {
       return settings;

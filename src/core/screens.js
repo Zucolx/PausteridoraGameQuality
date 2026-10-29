@@ -161,6 +161,7 @@
       game.icon(ctx, x + c.w / 2, y + 88, Math.min(120, c.w * 0.5), on ? t : 0);
       ctx.restore();
       D.keycap(ctx, String(i + 1), x + 30, y + 30, { size: 15, color: on ? game.accent : '#5a4030' });
+      infoBadge(ctx, x + c.w - 30, y + 30, on ? game.accent : '#8a6a50');
 
       // Con muchas tarjetas, el título se achica si una palabra no cabe en el ancho.
       let ts = c.w < 250 ? 23 : 27;
@@ -192,13 +193,14 @@
     });
 
     const device = D.InputState.device;
-    if (device === 'touch') D.text(ctx, '☝  Toca un juego para empezar', V.width / 2, 668, { size: 20, weight: 700, color: T.dim, align: 'center' });
+    if (device === 'touch') D.text(ctx, '☝  Toca un juego para empezar · ⓘ para ver sus instrucciones', V.width / 2, 668, { size: 20, weight: 700, color: T.dim, align: 'center' });
     else {
       D.hints(
         ctx,
         [
           [{ key: '← →', pad: 'dpadLR' }, 'elegir juego'],
           [{ key: 'ENTER', pad: 'a' }, 'continuar'],
+          [{ key: 'I', pad: 'y' }, 'instrucciones'],
           ...(settings ? [[{ key: 'C', pad: 'select' }, 'ajustes']] : []),
         ].concat(device === 'keyboard' ? [[{ key: 'M' }, 'sonido']] : []),
         V.width / 2,
@@ -258,6 +260,7 @@
 
     D.text(ctx, locked ? 'DIFICULTAD FIJADA POR CONFIGURACIÓN' : 'ELIGE LA DIFICULTAD', 736, 120, { size: 20, weight: 800, color: T.ink });
     drawButton(ctx, backButton(), { key: 'ESC', pad: 'b' }, '◀ VOLVER', { color: game.accent });
+    drawButton(ctx, infoButton(), { key: 'I', pad: 'y' }, 'INSTRUCCIONES', { color: game.accent, size: 16 });
     const rec = records[game.id] || {};
     const choices = choicesOf(game);
     const rows = choices.length;
@@ -342,6 +345,118 @@
 
   function backButton() {
     return { x: 1080, y: 50, w: 160, h: 42 };
+  }
+
+  // ------------------------------------------------------------ Instrucciones
+
+  // Botón "ⓘ" de cada tarjeta del menú (zona tocable un poco más grande que el dibujo).
+  function cardInfoButton(c) {
+    return { x: c.x + c.w - 54, y: c.y - 6, w: 52, h: 56 };
+  }
+
+  function infoButton() {
+    return { x: 860, y: 50, w: 210, h: 42 };
+  }
+
+  function infoBadge(ctx, x, y, color) {
+    ctx.save();
+    ctx.fillStyle = '#170e0a';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(x, y, 15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+    D.text(ctx, 'i', x, y + 7, { size: 20, weight: 800, color, align: 'center' });
+  }
+
+  function closeButton() {
+    return { x: 1070, y: 46, w: 150, h: 42 };
+  }
+
+  // Ventana con cómo se juega y los controles en teclado, mando (PS y Xbox) y pantalla táctil.
+  function drawInstructions(ctx, t, game) {
+    ctx.fillStyle = 'rgba(8,4,3,0.9)';
+    ctx.fillRect(0, 0, V.width, V.height);
+    D.panel(ctx, 40, 28, 1200, 664, { fill: '#170e0a', edge: game.accent, radius: 16, glow: game.accent });
+    D.text(ctx, 'INSTRUCCIONES', 70, 66, { size: 15, weight: 800, color: T.dim });
+    ctx.font = D.font(30, 800);
+    let ts = 30;
+    while (ts > 20 && ctx.measureText(game.title.toUpperCase()).width > 760) ctx.font = D.font(--ts, 800);
+    D.text(ctx, game.title.toUpperCase(), 70, 100, { size: ts, weight: 800, color: T.ink });
+    D.text(ctx, game.subtitle, 70, 126, { size: 17, weight: 700, color: game.accent });
+    drawButton(ctx, closeButton(), { key: 'ESC', pad: 'b' }, '✕ CERRAR', { color: game.accent, size: 16 });
+
+    // Cómo se juega.
+    D.text(ctx, 'CÓMO SE JUEGA', 70, 168, { size: 14, weight: 800, color: T.dim });
+    let y = 196;
+    game.howTo.forEach((line, i) => {
+      ctx.fillStyle = game.accent;
+      ctx.beginPath();
+      ctx.arc(82, y - 6, 11, 0, Math.PI * 2);
+      ctx.fill();
+      D.text(ctx, String(i + 1), 82, y - 1, { size: 13, weight: 800, color: '#170e0a', align: 'center' });
+      y += D.paragraph(ctx, line, 104, y, 500, { size: 15, weight: 600, color: T.ink, lineHeight: 19 }) + 8;
+    });
+    // Dificultades, en una línea cada una.
+    y += 10;
+    D.text(ctx, 'DIFICULTADES', 70, y, { size: 14, weight: 800, color: T.dim });
+    y += 22;
+    for (const d of D.DIFFICULTIES) {
+      D.text(ctx, d.label, 70, y, { size: 14, weight: 800, color: d.color });
+      y += D.paragraph(ctx, game.difficulties[d.id].join(' · '), 160, y, 444, { size: 13, color: T.dim, lineHeight: 16, maxLines: 3 }) + 6;
+    }
+
+    // Controles.
+    const cx = { action: 650, key: 810, pad: 930, touch: 1110 };
+    D.text(ctx, 'CONTROLES', cx.action, 168, { size: 14, weight: 800, color: T.dim });
+    const head = [
+      ['Acción', cx.action],
+      ['Teclado', cx.key],
+      ['Mando PS / Xbox', cx.pad],
+      ['Táctil', cx.touch],
+    ];
+    for (const [h, x] of head) D.text(ctx, h, x, 196, { size: 13, weight: 800, color: game.accent });
+    const touch = game.touch || { stick: true };
+    const rows = game.controls.concat([['P', 'pausa', 'start']]);
+    rows.forEach(([key, label, pad], i) => {
+      const ry = 214 + i * 56;
+      ctx.fillStyle = i % 2 ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)';
+      D.roundRect(ctx, cx.action - 8, ry, 572, 52, 6);
+      ctx.fill();
+      D.paragraph(ctx, label, cx.action, ry + 22, 150, { size: 14, weight: 700, color: T.ink, lineHeight: 16, maxLines: 2 });
+      D.control(ctx, { key }, cx.key, ry + 26, { size: 12, color: game.accent, device: 'keyboard' });
+      if (pad) {
+        D.control(ctx, { key, pad }, cx.pad, ry + 14, { size: 11, color: game.accent, device: 'ps' });
+        D.control(ctx, { key, pad }, cx.pad, ry + 38, { size: 11, color: game.accent, device: 'xbox' });
+      } else D.text(ctx, '—', cx.pad, ry + 31, { size: 14, color: T.faint });
+      const list = Array.isArray(pad) ? pad : [pad];
+      const drag = touch.stick && list.some((n) => n && (n.includes('stick') || n.startsWith('dpad')));
+      if (pad === 'start') D.text(ctx, 'toca el reloj', cx.touch, ry + 31, { size: 13, weight: 700, color: T.ink });
+      else if (drag) D.text(ctx, 'arrastra el dedo', cx.touch, ry + 31, { size: 13, weight: 700, color: T.ink });
+      else if (pad && list.some((n) => (D.InputState.touchLabels || {})[n])) D.control(ctx, { key, pad }, cx.touch, ry + 26, { size: list.length > 2 ? 10 : 12, color: game.accent, device: 'touch' });
+      else D.text(ctx, '☝ toca', cx.touch, ry + 31, { size: 13, weight: 700, color: T.ink });
+    });
+    const ly = 214 + rows.length * 56 + 20;
+    D.paragraph(
+      ctx,
+      'Táctil: las letras son los botones que aparecen en la pantalla durante el juego; ☝ significa tocar directamente lo que se ve. "Arrastra el dedo" se hace en la mitad izquierda.',
+      cx.action,
+      ly,
+      560,
+      { size: 13, color: T.dim, lineHeight: 17 }
+    );
+    D.hints(
+      ctx,
+      [
+        [{ key: 'ESC', pad: 'b' }, 'cerrar'],
+        [{ key: 'I', pad: 'y' }, 'instrucciones'],
+      ],
+      V.width / 2,
+      668,
+      { size: 14, gap: 40, ink: T.dim, align: 'center', color: game.accent }
+    );
   }
 
   // Botón con su control (tecla, botón del mando o ☝ en pantallas táctiles) y texto.
@@ -561,5 +676,5 @@
     for (const b of reportButtons(alt)) drawButton(ctx, b, b.spec, b.label, { color: game.accent, size: 17 });
   }
 
-  PF.Screens = { configItems, drawConfig, gearButton, fullscreenButton, menuCards, diffCards, choicesOf, choiceOf, choiceChips, playButton, backButton, pauseButtons, reportButtons, drawButton, drawMenu, drawSetup, drawPause, drawReport };
+  PF.Screens = { cardInfoButton, infoButton, closeButton, drawInstructions, configItems, drawConfig, gearButton, fullscreenButton, menuCards, diffCards, choicesOf, choiceOf, choiceChips, playButton, backButton, pauseButtons, reportButtons, drawButton, drawMenu, drawSetup, drawPause, drawReport };
 })();

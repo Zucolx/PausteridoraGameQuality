@@ -67,6 +67,12 @@ silencia en cualquier juego; con el ratón o el dedo, tocar el reloj del turno t
 pausa. Las pantallas de inicio, pausa y reporte tienen botones que se pueden tocar o
 clicar. Los récords se guardan por juego y por dificultad en el navegador.
 
+**Instrucciones antes de jugar:** cada tarjeta del menú tiene un botón **ⓘ**, y la
+pantalla de inicio de cada juego un botón **INSTRUCCIONES** (también la tecla **I** o
+△ / Y en el mando). Se abre una ventana con cómo se juega, las dificultades y una tabla
+de controles con la acción, la tecla, el botón del mando PS y Xbox, y qué hacer en
+pantallas táctiles. Se cierra con ESC, ○ / B o tocando la pantalla.
+
 Controles comunes: **WASD/flechas** moverse · **E** operar (E o Esc para salir) ·
 **Espacio** confirmar o mantener · **TAB** manual de consulta · **1-4** opciones.
 
@@ -433,9 +439,11 @@ antes de que se acabe el tiempo.
 | Montacargas circulando en el patio | Peligro: maquinaria en funcionamiento |
 
 - Acertar suma 60 puntos y la rapidez hasta 40 más (100 por pregunta).
-- Si fallas, la burbuja dice de qué advierte el pictograma elegido y por qué la escena
-  lleva el otro. Después de cada respuesta se marca el correcto (✔) y el elegido (✖);
-  se pasa a la siguiente con ENTER, ✕ / A o tocando, o sola tras unos segundos.
+- **Al elegir una opción, bien o mal, se pasa en el acto a la siguiente pregunta** (o
+  al reporte). Arriba de las opciones se ve un momento el resultado ("✔ ¡Correcto!
+  +98" o "✖ Era «…»"), y la burbuja de la barra de mensajes explica de qué advierte el
+  pictograma elegido y por qué la escena lleva el otro. Los errores quedan en el
+  reporte.
 - Se responde con ← → (y ↑ ↓) + ENTER, con los números 1-5, con la cruceta y ✕ / A, o
   tocando la tarjeta.
 

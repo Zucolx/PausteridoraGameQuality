@@ -8,7 +8,9 @@
   const T = D.T;
   const ACCENT = '#f7c600';
   const QUESTIONS = 3;
-  const FEEDBACK_S = 3.2; // tras responder, la explicación se ve unos segundos (se puede saltar)
+  // Al elegir, se pasa a la siguiente pregunta en el acto: el resultado se ve un momento
+  // arriba de las opciones y la explicación queda en la barra de mensajes.
+  const FLASH_S = 1.6;
 
   // Señales del material de la planta: texto del letrero, de qué advierte y qué hacer.
   const SIGNS = {
@@ -76,8 +78,7 @@
       q: -1,
       options: [],
       sel: 0,
-      phase: 'ask',
-      fbT: 0,
+      flash: null,
       qTime: cfg.time,
       duration: cfg.time,
       timeLeft: cfg.time,
@@ -113,10 +114,8 @@
     const id = s.order[s.q];
     s.options = optionsFor(s, id);
     s.sel = 0;
-    s.phase = 'ask';
     s.qTime = s.cfg.time;
     s.timeLeft = s.cfg.time;
-    B.clear(s.bubble);
     s.banner = D.makeBanner(`PREGUNTA ${s.q + 1} DE ${s.order.length}`, ACCENT, '¿Qué pictograma corresponde a la imagen?', 1.2);
   }
 
@@ -132,10 +131,9 @@
     s.floats = D.floatsUpdate(s.floats, dt);
     D.tickBanner(s, dt);
 
-    if (s.phase === 'feedback') {
-      s.fbT -= dt;
-      if (s.fbT <= 0 || hit(['confirm', 'space', 'interact'], ['a']) || clicks.length) next(s);
-      return;
+    if (s.flash) {
+      s.flash.t -= dt;
+      if (s.flash.t <= 0) s.flash = null;
     }
 
     s.qTime = Math.max(0, s.qTime - dt);
@@ -183,16 +181,19 @@
       s.stats.correct++;
       s.stats.points += pts;
       D.floatAdd(s.floats, RIGHT.x + RIGHT.w / 2, RIGHT.y + 70, `+${pts}`, T.ok, 26);
-      B.say(s.bubble, `${sign.label}. ${sign.why}`, { kind: 'ok', life: 60 });
+      B.say(s.bubble, `${sign.label}. ${sign.why}`, { kind: 'ok', life: 7 });
       D.sfx('resolved');
+      s.flash = { text: `✔ ¡Correcto! +${pts}`, color: T.ok, t: FLASH_S };
     } else if (!chosen) {
       s.stats.timeouts++;
-      B.say(s.bubble, `Se acabó el tiempo. Era «${sign.name}»: ${sign.why}`, { kind: 'tip', title: 'Tiempo agotado', life: 60 });
+      B.say(s.bubble, `Se acabó el tiempo. Era «${sign.name}»: ${sign.why}`, { kind: 'tip', title: 'Tiempo agotado', life: 9 });
+      s.flash = { text: `⏱ Tiempo agotado · era «${sign.name}»`, color: T.warn, t: FLASH_S };
     } else {
-      B.say(s.bubble, `«${SIGNS[chosen].name}» ${SIGNS[chosen].warns}. Aquí va «${sign.name}»: ${sign.why}`, { life: 60 });
+      B.say(s.bubble, `«${SIGNS[chosen].name}» ${SIGNS[chosen].warns}. Aquí va «${sign.name}»: ${sign.why}`, { life: 9 });
+      s.flash = { text: `✖ Era «${sign.name}»`, color: T.red, t: FLASH_S };
     }
-    s.phase = 'feedback';
-    s.fbT = FEEDBACK_S + (ok ? 0 : 1.5);
+    // Sin esperar: siguiente pregunta (o el reporte, si era la última).
+    next(s);
   }
 
   // ------------------------------------------------------------- Disposición
@@ -270,49 +271,39 @@
     ctx.lineWidth = 2;
     D.roundRect(ctx, box.x, box.y, box.w, box.h, 10);
     ctx.stroke();
-    const showCaption = s.cfg.caption || s.phase === 'feedback';
-    if (showCaption) D.paragraph(ctx, SIGNS[id].scene, SCENE.x + SCENE.w / 2, box.y + box.h + 34, SCENE.w - 40, { size: 20, weight: 800, color: T.ink, align: 'center', maxLines: 2 });
+    if (s.cfg.caption) D.paragraph(ctx, SIGNS[id].scene, SCENE.x + SCENE.w / 2, box.y + box.h + 34, SCENE.w - 40, { size: 20, weight: 800, color: T.ink, align: 'center', maxLines: 2 });
     else D.text(ctx, '¿Qué riesgo hay aquí?', SCENE.x + SCENE.w / 2, box.y + box.h + 34, { size: 20, weight: 800, color: T.dim, align: 'center' });
   }
 
   function drawOptions(s, ctx, t) {
-    const id = s.order[s.q];
-    const fb = s.phase === 'feedback';
-    const last = s.answers[s.answers.length - 1];
     panelTitle(ctx, RIGHT, '¿QUÉ PICTOGRAMA CORRESPONDE?');
-    // Tiempo de la pregunta.
+    // Tiempo de la pregunta; justo después de responder, el resultado de la anterior.
     const ratio = s.qTime / s.cfg.time;
-    D.text(ctx, fb ? (last.ok ? '✔ ¡Correcto!' : last.chosen ? '✖ No corresponde' : '⏱ Tiempo agotado') : `Responde rápido: ${Math.ceil(s.qTime)} s`, RIGHT.x + 16, RIGHT.y + 62, {
+    const f = s.flash;
+    D.text(ctx, f ? f.text : `Responde rápido: ${Math.ceil(s.qTime)} s`, RIGHT.x + 16, RIGHT.y + 62, {
       size: 18,
       weight: 800,
-      color: fb ? (last.ok ? T.ok : T.red) : ratio < 0.35 ? T.red : T.ink,
+      color: f ? f.color : ratio < 0.35 ? T.red : T.ink,
     });
     D.progressBar(ctx, RIGHT.x + 16, RIGHT.y + 74, RIGHT.w - 32, 6, ratio, ratio < 0.35 ? T.red : ACCENT);
     const list = cards(s.options.length);
     s.options.forEach((opt, i) => {
       const c = list[i];
-      const sel = !fb && i === s.sel;
-      const right = fb && opt === id;
-      const wrong = fb && last.chosen === opt && !last.ok;
-      const edge = right ? T.ok : wrong ? T.red : sel ? ACCENT : '#3a2e26';
-      D.panel(ctx, c.x, c.y, c.w, c.h, { fill: right ? '#13240f' : wrong ? '#2a1210' : sel ? '#2a2210' : '#17110d', edge, radius: 12, glow: right || wrong || sel ? edge : null });
-      if (fb && !right && !wrong) ctx.globalAlpha = 0.4;
-      const labels = s.cfg.labels || fb;
+      const sel = i === s.sel;
+      const edge = sel ? ACCENT : '#3a2e26';
+      D.panel(ctx, c.x, c.y, c.w, c.h, { fill: sel ? '#2a2210' : '#17110d', edge, radius: 12, glow: sel ? edge : null });
+      const labels = s.cfg.labels;
       const size = Math.min(c.w * 0.58, c.h - (labels ? 92 : 46));
       const sy = labels ? c.y + 22 + size * 0.5 : c.y + c.h / 2 + 4;
       // Placa clara, como un letrero impreso: el borde negro se ve sobre el fondo oscuro.
       D.panel(ctx, c.x + c.w / 2 - size * 0.72, sy - size * 0.62, size * 1.44, size * 1.18, { fill: '#f4efe6', edge: '#d8cfbf', radius: 10 });
       sign(ctx, opt, c.x + c.w / 2, sy, size);
-      if (labels) D.paragraph(ctx, SIGNS[opt].name, c.x + c.w / 2, c.y + c.h - 30, c.w - 20, { size: 15, weight: 800, color: right ? T.ok : wrong ? T.red : T.ink, align: 'center', lineHeight: 17, maxLines: 2 });
-      ctx.globalAlpha = 1;
+      if (labels) D.paragraph(ctx, SIGNS[opt].name, c.x + c.w / 2, c.y + c.h - 30, c.w - 20, { size: 15, weight: 800, color: T.ink, align: 'center', lineHeight: 17, maxLines: 2 });
       // Número para el teclado.
       if (D.InputState.device === 'keyboard') D.keycap(ctx, String(i + 1), c.x + 22, c.y + 22, { size: 13, color: sel ? ACCENT : '#5a4030' });
-      if (right) D.text(ctx, '✔', c.x + c.w - 22, c.y + 30, { size: 24, weight: 800, color: T.ok, align: 'center' });
-      if (wrong) D.text(ctx, '✖', c.x + c.w - 22, c.y + 30, { size: 24, weight: 800, color: T.red, align: 'center' });
     });
     const hintY = RIGHT.y + RIGHT.h - 22;
-    if (fb) D.hints(ctx, [[CTRL.pick, s.q + 1 >= s.order.length ? 'ver el reporte' : 'siguiente pregunta']], RIGHT.x + RIGHT.w / 2, hintY, { size: 14, align: 'center', ink: T.dim, color: ACCENT });
-    else D.hints(ctx, [[CTRL.move, 'elegir'], [CTRL.pick, 'responder']], RIGHT.x + RIGHT.w / 2, hintY, { size: 14, align: 'center', ink: T.dim, color: ACCENT });
+    D.hints(ctx, [[CTRL.move, 'elegir'], [CTRL.pick, 'responder']], RIGHT.x + RIGHT.w / 2, hintY, { size: 14, align: 'center', ink: T.dim, color: ACCENT });
   }
 
   // ------------------------------------------------------------- Pictogramas
@@ -821,7 +812,7 @@
       '3 preguntas rápidas: en cada una ves una escena de la planta.',
       'Elige el pictograma de advertencia que corresponde: partículas, atrapamiento, tropiezo, riesgo eléctrico o maquinaria en funcionamiento.',
       'Acertar suma 60 puntos y la rapidez hasta 40 más. Si fallas, te explicamos por qué.',
-      'Después de cada respuesta ves la explicación; pasa a la siguiente con ENTER o tocando.',
+      'Al elegir se pasa directo a la siguiente pregunta; la explicación queda en la barra de mensajes y en el reporte.',
     ],
     // Táctil: se tocan las tarjetas directamente.
     touch: { stick: false, main: [], aux: [] },

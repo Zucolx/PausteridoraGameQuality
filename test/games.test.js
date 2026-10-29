@@ -833,14 +833,14 @@ test('Pictograma: máximo 3 preguntas, sin repetir, con la respuesta entre las o
         assert.equal(new Set(s.options).size, n);
         assert.ok(s.options.includes(s.order[s.q]));
         s.update(DT, input({ pressed: ['confirm'] }));
-        tick(s, 6);
       }
+      assert.equal(s.answers.length, 3);
     }
   }
   assert.deepEqual(SG.IDS.sort(), ['atrapamiento', 'electrico', 'maquinaria', 'particulas', 'tropiezo']);
 });
 
-test('Pictograma: acertar rápido da hasta 100 por pregunta; fallar explica por qué', () => {
+test('Pictograma: al elegir (bien o mal) pasa en el acto a la siguiente; la explicación queda', () => {
   const s = game('signs').create('normal', { seed: 4 });
   const pick = (id) => {
     const i = s.options.indexOf(id);
@@ -848,29 +848,28 @@ test('Pictograma: acertar rápido da hasta 100 por pregunta; fallar explica por 
     s.update(DT, input({ clicks: [{ x: c.x + c.w / 2, y: c.y + c.h / 2 }] }));
   };
   pick(s.order[0]);
-  assert.equal(s.phase, 'feedback');
+  assert.equal(s.q, 1, 'acierto: sin esperar');
   assert.ok(s.stats.points >= 99, 'respuesta inmediata');
   assert.equal(s.bubble.cur.kind, 'ok');
-  press(s, 'confirm');
-  assert.equal(s.q, 1, 'ENTER pasa a la siguiente');
+  assert.match(s.flash.text, /¡Correcto!/);
+  assert.equal(s.qTime, s.cfg.time, 'el tiempo de la nueva pregunta empieza completo');
   const id = s.order[1];
   const wrong = s.options.find((o) => o !== id);
   pick(wrong);
+  assert.equal(s.q, 2, 'error: tampoco espera');
   assert.equal(s.bubble.cur.kind, 'error');
   assert.match(s.bubble.cur.message, new RegExp(`«${SG.SIGNS[wrong].name}» ${SG.SIGNS[wrong].warns}\\. Aquí va «${SG.SIGNS[id].name}»`));
-  tick(s, 5);
-  assert.equal(s.q, 2, 'la explicación pasa sola tras unos segundos');
-  // Sin responder: se acaba el tiempo.
+  assert.match(s.flash.text, new RegExp(`Era «${SG.SIGNS[id].name}»`));
+  // Sin responder: se acaba el tiempo y termina el juego.
   tick(s, 8.1);
-  assert.equal(s.phase, 'feedback');
+  assert.equal(s.over, true);
   assert.equal(s.stats.timeouts, 1);
   assert.equal(s.bubble.cur.title, 'Tiempo agotado');
-  tick(s, 6);
-  assert.equal(s.over, true);
   const rep = s.report();
   assert.equal(rep.rows.length, 5);
   assert.match(rep.headline, /1 de 3 pictogramas/);
   assert.ok(rep.score >= 33 && rep.score <= 34);
+  assert.equal(rep.mistakes.length, 1, 'el error queda en "Lo que no va así"');
 });
 
 test('Pictograma: teclado (flechas, 1-5) y mando (cruceta y ✕/A)', () => {
@@ -879,9 +878,10 @@ test('Pictograma: teclado (flechas, 1-5) y mando (cruceta y ✕/A)', () => {
   assert.equal(s.sel, 1);
   s.update(DT, input({ pad: { pressed: ['down'] } }));
   assert.equal(s.sel, 4, 'abajo en la cuadrícula 3 + 2');
+  const fifth = s.options[4];
   s.update(DT, input({ pad: { pressed: ['a'] } }));
-  assert.equal(s.answers[0].chosen, s.options[4]);
-  press(s, 'confirm');
+  assert.equal(s.answers[0].chosen, fifth);
+  assert.equal(s.sel, 0, 'la siguiente pregunta empieza en la primera opción');
   const i = s.options.indexOf(s.order[1]);
   press(s, String(i + 1));
   assert.equal(s.answers[1].ok, true);

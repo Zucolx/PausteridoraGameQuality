@@ -4434,6 +4434,7 @@ globalThis.PF = { BUILD: { ajustes: false } };
       game.icon(ctx, x + c.w / 2, y + 88, Math.min(120, c.w * 0.5), on ? t : 0);
       ctx.restore();
       D.keycap(ctx, String(i + 1), x + 30, y + 30, { size: 15, color: on ? game.accent : '#5a4030' });
+      infoBadge(ctx, x + c.w - 30, y + 30, on ? game.accent : '#8a6a50');
 
       // Con muchas tarjetas, el título se achica si una palabra no cabe en el ancho.
       let ts = c.w < 250 ? 23 : 27;
@@ -4465,13 +4466,14 @@ globalThis.PF = { BUILD: { ajustes: false } };
     });
 
     const device = D.InputState.device;
-    if (device === 'touch') D.text(ctx, '☝  Toca un juego para empezar', V.width / 2, 668, { size: 20, weight: 700, color: T.dim, align: 'center' });
+    if (device === 'touch') D.text(ctx, '☝  Toca un juego para empezar · ⓘ para ver sus instrucciones', V.width / 2, 668, { size: 20, weight: 700, color: T.dim, align: 'center' });
     else {
       D.hints(
         ctx,
         [
           [{ key: '← →', pad: 'dpadLR' }, 'elegir juego'],
           [{ key: 'ENTER', pad: 'a' }, 'continuar'],
+          [{ key: 'I', pad: 'y' }, 'instrucciones'],
           ...(settings ? [[{ key: 'C', pad: 'select' }, 'ajustes']] : []),
         ].concat(device === 'keyboard' ? [[{ key: 'M' }, 'sonido']] : []),
         V.width / 2,
@@ -4531,6 +4533,7 @@ globalThis.PF = { BUILD: { ajustes: false } };
 
     D.text(ctx, locked ? 'DIFICULTAD FIJADA POR CONFIGURACIÓN' : 'ELIGE LA DIFICULTAD', 736, 120, { size: 20, weight: 800, color: T.ink });
     drawButton(ctx, backButton(), { key: 'ESC', pad: 'b' }, '◀ VOLVER', { color: game.accent });
+    drawButton(ctx, infoButton(), { key: 'I', pad: 'y' }, 'INSTRUCCIONES', { color: game.accent, size: 16 });
     const rec = records[game.id] || {};
     const choices = choicesOf(game);
     const rows = choices.length;
@@ -4615,6 +4618,118 @@ globalThis.PF = { BUILD: { ajustes: false } };
 
   function backButton() {
     return { x: 1080, y: 50, w: 160, h: 42 };
+  }
+
+  // ------------------------------------------------------------ Instrucciones
+
+  // Botón "ⓘ" de cada tarjeta del menú (zona tocable un poco más grande que el dibujo).
+  function cardInfoButton(c) {
+    return { x: c.x + c.w - 54, y: c.y - 6, w: 52, h: 56 };
+  }
+
+  function infoButton() {
+    return { x: 860, y: 50, w: 210, h: 42 };
+  }
+
+  function infoBadge(ctx, x, y, color) {
+    ctx.save();
+    ctx.fillStyle = '#170e0a';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(x, y, 15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+    D.text(ctx, 'i', x, y + 7, { size: 20, weight: 800, color, align: 'center' });
+  }
+
+  function closeButton() {
+    return { x: 1070, y: 46, w: 150, h: 42 };
+  }
+
+  // Ventana con cómo se juega y los controles en teclado, mando (PS y Xbox) y pantalla táctil.
+  function drawInstructions(ctx, t, game) {
+    ctx.fillStyle = 'rgba(8,4,3,0.9)';
+    ctx.fillRect(0, 0, V.width, V.height);
+    D.panel(ctx, 40, 28, 1200, 664, { fill: '#170e0a', edge: game.accent, radius: 16, glow: game.accent });
+    D.text(ctx, 'INSTRUCCIONES', 70, 66, { size: 15, weight: 800, color: T.dim });
+    ctx.font = D.font(30, 800);
+    let ts = 30;
+    while (ts > 20 && ctx.measureText(game.title.toUpperCase()).width > 760) ctx.font = D.font(--ts, 800);
+    D.text(ctx, game.title.toUpperCase(), 70, 100, { size: ts, weight: 800, color: T.ink });
+    D.text(ctx, game.subtitle, 70, 126, { size: 17, weight: 700, color: game.accent });
+    drawButton(ctx, closeButton(), { key: 'ESC', pad: 'b' }, '✕ CERRAR', { color: game.accent, size: 16 });
+
+    // Cómo se juega.
+    D.text(ctx, 'CÓMO SE JUEGA', 70, 168, { size: 14, weight: 800, color: T.dim });
+    let y = 196;
+    game.howTo.forEach((line, i) => {
+      ctx.fillStyle = game.accent;
+      ctx.beginPath();
+      ctx.arc(82, y - 6, 11, 0, Math.PI * 2);
+      ctx.fill();
+      D.text(ctx, String(i + 1), 82, y - 1, { size: 13, weight: 800, color: '#170e0a', align: 'center' });
+      y += D.paragraph(ctx, line, 104, y, 500, { size: 15, weight: 600, color: T.ink, lineHeight: 19 }) + 8;
+    });
+    // Dificultades, en una línea cada una.
+    y += 10;
+    D.text(ctx, 'DIFICULTADES', 70, y, { size: 14, weight: 800, color: T.dim });
+    y += 22;
+    for (const d of D.DIFFICULTIES) {
+      D.text(ctx, d.label, 70, y, { size: 14, weight: 800, color: d.color });
+      y += D.paragraph(ctx, game.difficulties[d.id].join(' · '), 160, y, 444, { size: 13, color: T.dim, lineHeight: 16, maxLines: 3 }) + 6;
+    }
+
+    // Controles.
+    const cx = { action: 650, key: 810, pad: 930, touch: 1110 };
+    D.text(ctx, 'CONTROLES', cx.action, 168, { size: 14, weight: 800, color: T.dim });
+    const head = [
+      ['Acción', cx.action],
+      ['Teclado', cx.key],
+      ['Mando PS / Xbox', cx.pad],
+      ['Táctil', cx.touch],
+    ];
+    for (const [h, x] of head) D.text(ctx, h, x, 196, { size: 13, weight: 800, color: game.accent });
+    const touch = game.touch || { stick: true };
+    const rows = game.controls.concat([['P', 'pausa', 'start']]);
+    rows.forEach(([key, label, pad], i) => {
+      const ry = 214 + i * 56;
+      ctx.fillStyle = i % 2 ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)';
+      D.roundRect(ctx, cx.action - 8, ry, 572, 52, 6);
+      ctx.fill();
+      D.paragraph(ctx, label, cx.action, ry + 22, 150, { size: 14, weight: 700, color: T.ink, lineHeight: 16, maxLines: 2 });
+      D.control(ctx, { key }, cx.key, ry + 26, { size: 12, color: game.accent, device: 'keyboard' });
+      if (pad) {
+        D.control(ctx, { key, pad }, cx.pad, ry + 14, { size: 11, color: game.accent, device: 'ps' });
+        D.control(ctx, { key, pad }, cx.pad, ry + 38, { size: 11, color: game.accent, device: 'xbox' });
+      } else D.text(ctx, '—', cx.pad, ry + 31, { size: 14, color: T.faint });
+      const list = Array.isArray(pad) ? pad : [pad];
+      const drag = touch.stick && list.some((n) => n && (n.includes('stick') || n.startsWith('dpad')));
+      if (pad === 'start') D.text(ctx, 'toca el reloj', cx.touch, ry + 31, { size: 13, weight: 700, color: T.ink });
+      else if (drag) D.text(ctx, 'arrastra el dedo', cx.touch, ry + 31, { size: 13, weight: 700, color: T.ink });
+      else if (pad && list.some((n) => (D.InputState.touchLabels || {})[n])) D.control(ctx, { key, pad }, cx.touch, ry + 26, { size: list.length > 2 ? 10 : 12, color: game.accent, device: 'touch' });
+      else D.text(ctx, '☝ toca', cx.touch, ry + 31, { size: 13, weight: 700, color: T.ink });
+    });
+    const ly = 214 + rows.length * 56 + 20;
+    D.paragraph(
+      ctx,
+      'Táctil: las letras son los botones que aparecen en la pantalla durante el juego; ☝ significa tocar directamente lo que se ve. "Arrastra el dedo" se hace en la mitad izquierda.',
+      cx.action,
+      ly,
+      560,
+      { size: 13, color: T.dim, lineHeight: 17 }
+    );
+    D.hints(
+      ctx,
+      [
+        [{ key: 'ESC', pad: 'b' }, 'cerrar'],
+        [{ key: 'I', pad: 'y' }, 'instrucciones'],
+      ],
+      V.width / 2,
+      668,
+      { size: 14, gap: 40, ink: T.dim, align: 'center', color: game.accent }
+    );
   }
 
   // Botón con su control (tecla, botón del mando o ☝ en pantallas táctiles) y texto.
@@ -4834,7 +4949,7 @@ globalThis.PF = { BUILD: { ajustes: false } };
     for (const b of reportButtons(alt)) drawButton(ctx, b, b.spec, b.label, { color: game.accent, size: 17 });
   }
 
-  PF.Screens = { configItems, drawConfig, gearButton, fullscreenButton, menuCards, diffCards, choicesOf, choiceOf, choiceChips, playButton, backButton, pauseButtons, reportButtons, drawButton, drawMenu, drawSetup, drawPause, drawReport };
+  PF.Screens = { cardInfoButton, infoButton, closeButton, drawInstructions, configItems, drawConfig, gearButton, fullscreenButton, menuCards, diffCards, choicesOf, choiceOf, choiceChips, playButton, backButton, pauseButtons, reportButtons, drawButton, drawMenu, drawSetup, drawPause, drawReport };
 })();
 </script>
     <script>
@@ -11003,7 +11118,9 @@ globalThis.PF = { BUILD: { ajustes: false } };
   const T = D.T;
   const ACCENT = '#f7c600';
   const QUESTIONS = 3;
-  const FEEDBACK_S = 3.2; // tras responder, la explicación se ve unos segundos (se puede saltar)
+  // Al elegir, se pasa a la siguiente pregunta en el acto: el resultado se ve un momento
+  // arriba de las opciones y la explicación queda en la barra de mensajes.
+  const FLASH_S = 1.6;
 
   // Señales del material de la planta: texto del letrero, de qué advierte y qué hacer.
   const SIGNS = {
@@ -11071,8 +11188,7 @@ globalThis.PF = { BUILD: { ajustes: false } };
       q: -1,
       options: [],
       sel: 0,
-      phase: 'ask',
-      fbT: 0,
+      flash: null,
       qTime: cfg.time,
       duration: cfg.time,
       timeLeft: cfg.time,
@@ -11108,10 +11224,8 @@ globalThis.PF = { BUILD: { ajustes: false } };
     const id = s.order[s.q];
     s.options = optionsFor(s, id);
     s.sel = 0;
-    s.phase = 'ask';
     s.qTime = s.cfg.time;
     s.timeLeft = s.cfg.time;
-    B.clear(s.bubble);
     s.banner = D.makeBanner(`PREGUNTA ${s.q + 1} DE ${s.order.length}`, ACCENT, '¿Qué pictograma corresponde a la imagen?', 1.2);
   }
 
@@ -11127,10 +11241,9 @@ globalThis.PF = { BUILD: { ajustes: false } };
     s.floats = D.floatsUpdate(s.floats, dt);
     D.tickBanner(s, dt);
 
-    if (s.phase === 'feedback') {
-      s.fbT -= dt;
-      if (s.fbT <= 0 || hit(['confirm', 'space', 'interact'], ['a']) || clicks.length) next(s);
-      return;
+    if (s.flash) {
+      s.flash.t -= dt;
+      if (s.flash.t <= 0) s.flash = null;
     }
 
     s.qTime = Math.max(0, s.qTime - dt);
@@ -11178,16 +11291,19 @@ globalThis.PF = { BUILD: { ajustes: false } };
       s.stats.correct++;
       s.stats.points += pts;
       D.floatAdd(s.floats, RIGHT.x + RIGHT.w / 2, RIGHT.y + 70, `+${pts}`, T.ok, 26);
-      B.say(s.bubble, `${sign.label}. ${sign.why}`, { kind: 'ok', life: 60 });
+      B.say(s.bubble, `${sign.label}. ${sign.why}`, { kind: 'ok', life: 7 });
       D.sfx('resolved');
+      s.flash = { text: `✔ ¡Correcto! +${pts}`, color: T.ok, t: FLASH_S };
     } else if (!chosen) {
       s.stats.timeouts++;
-      B.say(s.bubble, `Se acabó el tiempo. Era «${sign.name}»: ${sign.why}`, { kind: 'tip', title: 'Tiempo agotado', life: 60 });
+      B.say(s.bubble, `Se acabó el tiempo. Era «${sign.name}»: ${sign.why}`, { kind: 'tip', title: 'Tiempo agotado', life: 9 });
+      s.flash = { text: `⏱ Tiempo agotado · era «${sign.name}»`, color: T.warn, t: FLASH_S };
     } else {
-      B.say(s.bubble, `«${SIGNS[chosen].name}» ${SIGNS[chosen].warns}. Aquí va «${sign.name}»: ${sign.why}`, { life: 60 });
+      B.say(s.bubble, `«${SIGNS[chosen].name}» ${SIGNS[chosen].warns}. Aquí va «${sign.name}»: ${sign.why}`, { life: 9 });
+      s.flash = { text: `✖ Era «${sign.name}»`, color: T.red, t: FLASH_S };
     }
-    s.phase = 'feedback';
-    s.fbT = FEEDBACK_S + (ok ? 0 : 1.5);
+    // Sin esperar: siguiente pregunta (o el reporte, si era la última).
+    next(s);
   }
 
   // ------------------------------------------------------------- Disposición
@@ -11265,49 +11381,39 @@ globalThis.PF = { BUILD: { ajustes: false } };
     ctx.lineWidth = 2;
     D.roundRect(ctx, box.x, box.y, box.w, box.h, 10);
     ctx.stroke();
-    const showCaption = s.cfg.caption || s.phase === 'feedback';
-    if (showCaption) D.paragraph(ctx, SIGNS[id].scene, SCENE.x + SCENE.w / 2, box.y + box.h + 34, SCENE.w - 40, { size: 20, weight: 800, color: T.ink, align: 'center', maxLines: 2 });
+    if (s.cfg.caption) D.paragraph(ctx, SIGNS[id].scene, SCENE.x + SCENE.w / 2, box.y + box.h + 34, SCENE.w - 40, { size: 20, weight: 800, color: T.ink, align: 'center', maxLines: 2 });
     else D.text(ctx, '¿Qué riesgo hay aquí?', SCENE.x + SCENE.w / 2, box.y + box.h + 34, { size: 20, weight: 800, color: T.dim, align: 'center' });
   }
 
   function drawOptions(s, ctx, t) {
-    const id = s.order[s.q];
-    const fb = s.phase === 'feedback';
-    const last = s.answers[s.answers.length - 1];
     panelTitle(ctx, RIGHT, '¿QUÉ PICTOGRAMA CORRESPONDE?');
-    // Tiempo de la pregunta.
+    // Tiempo de la pregunta; justo después de responder, el resultado de la anterior.
     const ratio = s.qTime / s.cfg.time;
-    D.text(ctx, fb ? (last.ok ? '✔ ¡Correcto!' : last.chosen ? '✖ No corresponde' : '⏱ Tiempo agotado') : `Responde rápido: ${Math.ceil(s.qTime)} s`, RIGHT.x + 16, RIGHT.y + 62, {
+    const f = s.flash;
+    D.text(ctx, f ? f.text : `Responde rápido: ${Math.ceil(s.qTime)} s`, RIGHT.x + 16, RIGHT.y + 62, {
       size: 18,
       weight: 800,
-      color: fb ? (last.ok ? T.ok : T.red) : ratio < 0.35 ? T.red : T.ink,
+      color: f ? f.color : ratio < 0.35 ? T.red : T.ink,
     });
     D.progressBar(ctx, RIGHT.x + 16, RIGHT.y + 74, RIGHT.w - 32, 6, ratio, ratio < 0.35 ? T.red : ACCENT);
     const list = cards(s.options.length);
     s.options.forEach((opt, i) => {
       const c = list[i];
-      const sel = !fb && i === s.sel;
-      const right = fb && opt === id;
-      const wrong = fb && last.chosen === opt && !last.ok;
-      const edge = right ? T.ok : wrong ? T.red : sel ? ACCENT : '#3a2e26';
-      D.panel(ctx, c.x, c.y, c.w, c.h, { fill: right ? '#13240f' : wrong ? '#2a1210' : sel ? '#2a2210' : '#17110d', edge, radius: 12, glow: right || wrong || sel ? edge : null });
-      if (fb && !right && !wrong) ctx.globalAlpha = 0.4;
-      const labels = s.cfg.labels || fb;
+      const sel = i === s.sel;
+      const edge = sel ? ACCENT : '#3a2e26';
+      D.panel(ctx, c.x, c.y, c.w, c.h, { fill: sel ? '#2a2210' : '#17110d', edge, radius: 12, glow: sel ? edge : null });
+      const labels = s.cfg.labels;
       const size = Math.min(c.w * 0.58, c.h - (labels ? 92 : 46));
       const sy = labels ? c.y + 22 + size * 0.5 : c.y + c.h / 2 + 4;
       // Placa clara, como un letrero impreso: el borde negro se ve sobre el fondo oscuro.
       D.panel(ctx, c.x + c.w / 2 - size * 0.72, sy - size * 0.62, size * 1.44, size * 1.18, { fill: '#f4efe6', edge: '#d8cfbf', radius: 10 });
       sign(ctx, opt, c.x + c.w / 2, sy, size);
-      if (labels) D.paragraph(ctx, SIGNS[opt].name, c.x + c.w / 2, c.y + c.h - 30, c.w - 20, { size: 15, weight: 800, color: right ? T.ok : wrong ? T.red : T.ink, align: 'center', lineHeight: 17, maxLines: 2 });
-      ctx.globalAlpha = 1;
+      if (labels) D.paragraph(ctx, SIGNS[opt].name, c.x + c.w / 2, c.y + c.h - 30, c.w - 20, { size: 15, weight: 800, color: T.ink, align: 'center', lineHeight: 17, maxLines: 2 });
       // Número para el teclado.
       if (D.InputState.device === 'keyboard') D.keycap(ctx, String(i + 1), c.x + 22, c.y + 22, { size: 13, color: sel ? ACCENT : '#5a4030' });
-      if (right) D.text(ctx, '✔', c.x + c.w - 22, c.y + 30, { size: 24, weight: 800, color: T.ok, align: 'center' });
-      if (wrong) D.text(ctx, '✖', c.x + c.w - 22, c.y + 30, { size: 24, weight: 800, color: T.red, align: 'center' });
     });
     const hintY = RIGHT.y + RIGHT.h - 22;
-    if (fb) D.hints(ctx, [[CTRL.pick, s.q + 1 >= s.order.length ? 'ver el reporte' : 'siguiente pregunta']], RIGHT.x + RIGHT.w / 2, hintY, { size: 14, align: 'center', ink: T.dim, color: ACCENT });
-    else D.hints(ctx, [[CTRL.move, 'elegir'], [CTRL.pick, 'responder']], RIGHT.x + RIGHT.w / 2, hintY, { size: 14, align: 'center', ink: T.dim, color: ACCENT });
+    D.hints(ctx, [[CTRL.move, 'elegir'], [CTRL.pick, 'responder']], RIGHT.x + RIGHT.w / 2, hintY, { size: 14, align: 'center', ink: T.dim, color: ACCENT });
   }
 
   // ------------------------------------------------------------- Pictogramas
@@ -11816,7 +11922,7 @@ globalThis.PF = { BUILD: { ajustes: false } };
       '3 preguntas rápidas: en cada una ves una escena de la planta.',
       'Elige el pictograma de advertencia que corresponde: partículas, atrapamiento, tropiezo, riesgo eléctrico o maquinaria en funcionamiento.',
       'Acertar suma 60 puntos y la rapidez hasta 40 más. Si fallas, te explicamos por qué.',
-      'Después de cada respuesta ves la explicación; pasa a la siguiente con ENTER o tocando.',
+      'Al elegir se pasa directo a la siguiente pregunta; la explicación queda en la barra de mensajes y en el reporte.',
     ],
     // Táctil: se tocan las tarjetas directamente.
     touch: { stick: false, main: [], aux: [] },
@@ -11871,6 +11977,7 @@ globalThis.PF = { BUILD: { ajustes: false } };
   let diffSel = 1;
   let choiceSel = {};
   let cfgFocus = 0;
+  let info = null; // juego cuya ventana de instrucciones está abierta (menú o pantalla de inicio)
   let inst = null;
   let report = null;
   let isRecord = false;
@@ -12049,6 +12156,11 @@ globalThis.PF = { BUILD: { ajustes: false } };
   function shell(action, digit) {
     const dirs = ['up', 'down', 'left', 'right'];
     const list = menuGames();
+    // Instrucciones abiertas: cualquier botón de aceptar, volver o △/Y las cierra.
+    if (info) {
+      if (['back', 'confirm', 'alt', 'start', 'config'].includes(action)) info = null;
+      return;
+    }
     if (screen === 'menu') {
       sel = Math.min(sel, list.length - 1);
       if (action === 'left') sel = (sel + list.length - 1) % list.length;
@@ -12058,6 +12170,7 @@ globalThis.PF = { BUILD: { ajustes: false } };
         openSetup(list[sel]);
       } else if (action === 'confirm' || action === 'start') openSetup(list[sel]);
       else if (action === 'config' && Settings.editable()) openLogin();
+      else if (action === 'alt') info = list[sel];
     } else if (screen === 'setup') {
       if (action === 'up') moveFocus(-1);
       else if (action === 'down') moveFocus(1);
@@ -12069,6 +12182,7 @@ globalThis.PF = { BUILD: { ajustes: false } };
         startGame();
       } else if (action === 'confirm' || action === 'start') startGame();
       else if (action === 'back') toMenu();
+      else if (action === 'alt') info = game();
     } else if (screen === 'report') {
       if (action === 'confirm' || action === 'start') startGame();
       else if (action === 'alt' && reportAlt()) openSetup(game());
@@ -12210,6 +12324,9 @@ globalThis.PF = { BUILD: { ajustes: false } };
     }
     if (screen !== 'play') {
       if (e.repeat && !DIR[code]) return;
+      if (info && code === 'KeyI') return shell('back');
+      if (screen === 'menu' && code === 'KeyI') return shell('alt');
+      if (screen === 'setup' && code === 'KeyI') return shell('alt');
       if (screen === 'menu' && code === 'KeyC') return shell('config');
       if (DIGIT[code]) return shell('digit', +DIGIT[code]);
       // En el reporte, D cambia de dificultad aunque también sea "derecha".
@@ -12269,17 +12386,33 @@ globalThis.PF = { BUILD: { ajustes: false } };
 
   // Un clic o un toque en el punto p (coordenadas del juego).
   function tapAt(p) {
+    // Instrucciones abiertas: tocar en cualquier parte las cierra.
+    if (info) {
+      info = null;
+      return;
+    }
     if (screen === 'menu') {
       if (Settings.editable() && inside(p, S.gearButton())) return openLogin();
       if (canFullscreen && inside(p, S.fullscreenButton())) return toggleFullscreen();
       const list = menuGames();
-      const i = S.menuCards(list.length).findIndex((c) => inside(p, c));
+      const cards = S.menuCards(list.length);
+      const ii = cards.findIndex((c) => inside(p, S.cardInfoButton(c)));
+      if (ii >= 0) {
+        sel = ii;
+        info = list[ii];
+        return;
+      }
+      const i = cards.findIndex((c) => inside(p, c));
       if (i >= 0) {
         sel = i;
         openSetup(list[i]);
       }
     } else if (screen === 'setup') {
       if (inside(p, S.backButton())) return shell('back');
+      if (inside(p, S.infoButton())) {
+        info = game();
+        return;
+      }
       const choices = S.choicesOf(game());
       const i = S.diffCards(choices.length).findIndex((c) => inside(p, c));
       let hit = null;
@@ -12521,7 +12654,7 @@ globalThis.PF = { BUILD: { ajustes: false } };
     if (turned && screen === 'play') pause();
     // Glifos de los juegos: con el dedo, muestran los botones virtuales del juego en curso.
     // En la pantalla de inicio, los controles muestran los botones que tendrá el juego.
-    const layout = screen === 'play' ? tp.layout : screen === 'setup' ? game().touch || TOUCH_DEFAULT : null;
+    const layout = screen === 'play' ? tp.layout : info ? info.touch || TOUCH_DEFAULT : screen === 'setup' ? game().touch || TOUCH_DEFAULT : null;
     IS.touchLabels = Touch.layoutLabels(layout);
     IS.touchStick = !!(layout && layout.stick);
     const pad = pollPad();
@@ -12548,6 +12681,8 @@ globalThis.PF = { BUILD: { ajustes: false } };
       else if (screen === 'setup') S.drawSetup(ctx, r.t, game(), lockedDiff() >= 0 ? lockedDiff() : diffSel, records, choiceValues(), setupFocus, { locked: lockedDiff() >= 0 });
       else if (screen === 'report') S.drawReport(ctx, r.t, game(), diffId(), report, (records[game().id] || {})[diffId()], isRecord, { alt: reportAlt() });
       else if (screen === 'config') S.drawConfig(ctx, r.t, ALL, settings, cfgFocus, { persistent: Settings.persistent() });
+      if (info && (screen === 'menu' || screen === 'setup')) S.drawInstructions(ctx, r.t, info);
+      else info = null;
     }
     if (turned) drawRotate(ctx);
     requestAnimationFrame(frame);
@@ -12560,6 +12695,9 @@ globalThis.PF = { BUILD: { ajustes: false } };
     },
     get screen() {
       return screen;
+    },
+    get info() {
+      return info && info.id;
     },
     get settings() {
       return settings;
